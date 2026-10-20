@@ -72,6 +72,7 @@ See [build and verification details](docs/development/python.md).
 | `bindings/common/` | Two binding-owned native adapters |
 | `scripts/check_python.py` | Installed-wheel, pytest, example and Query validation |
 | `tests/build/` | Dependency verification and public Core target tests |
+| `tests/ci/`, `.github/workflows/` | PR/Main/Full gates and evidence regressions |
 | `docs/migration/` | Frozen source inventory and original migration evidence |
 
 Build diagnostics are written to `core-selection.json` in the CMake build
@@ -82,3 +83,17 @@ See the [user guide](docs/guides/python.md) and
 
 The initial migration remains reproducible at its historical import commit.
 Its frozen inventory is not rewritten to conceal subsequent build changes.
+
+## Continuous integration
+
+Pull requests run the installed Python suite on Linux/CPython 3.11 and the
+source quality checks. Pushes to `main` run a short build/import/API smoke.
+Manual or reusable Full CI covers CPython 3.11–3.15 on Linux, Windows and macOS,
+including wheel installation from both source distributions.
+
+The stable `Python quality gate` checks all required results and attempt-scoped
+build evidence. Core's own test suites remain disabled. The current pinned-Git
+dependency is explicitly unattested; release callers must enable
+`require_verified_core`, which rejects the current null release lock.
+See [quality gates and local commands](docs/quality-gates.md) and
+[local validation](docs/validation/ci.md).

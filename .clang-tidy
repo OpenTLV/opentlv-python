@@ -1,0 +1,5 @@
+Checks: '-*,clang-analyzer-*,bugprone-sizeof-expression,bugprone-suspicious-memset-usage,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling'
+WarningsAsErrors: '*'
+# Arrays of PyObject* intentionally allocate pointer-sized elements.
+CheckOptions:
+  bugprone-sizeof-expression.WarnOnSizeOfPointerToAggregate: false

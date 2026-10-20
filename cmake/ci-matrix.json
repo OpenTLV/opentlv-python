@@ -1,0 +1,12 @@
+{
+  "python": ["3.11", "3.12", "3.13", "3.14", "3.15"],
+  "platforms": [
+    {"os": "ubuntu-24.04", "system": "Linux", "id": "linux"},
+    {"os": "windows-latest", "system": "Windows", "id": "windows"},
+    {"os": "macos-latest", "system": "Darwin", "id": "macos"}
+  ],
+  "pytest_cases": 299,
+  "examples": 8,
+  "query_fixtures": 171,
+  "query_checks": 664
+}
