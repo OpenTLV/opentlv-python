@@ -1,0 +1,69 @@
+name: Python Bindings
+
+# Builds and tests the experimental Python bindings (bindings/python) on every
+# platform. scikit-build-core drives the opentlv-core build, which
+# configures and compiles the C library with CMake and links it into the
+# native extension; opentlv is a pure-Python package on top of it.
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'bindings/python/**'
+      - 'bindings/common/**'
+      - 'tests/query/**'
+      - 'tlv/**'
+      - 'cmake/**'
+      - '**/CMakeLists.txt'
+      - '.github/workflows/python.yml'
+
+concurrency:
+  group: python-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    name: build and test / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows and macOS run on release tags only.
+        os: ${{ fromJSON(startsWith(github.ref, 'refs/tags/') && '["ubuntu-24.04", "windows-latest", "macos-latest"]' || '["ubuntu-24.04"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build and install the opentlv-core and opentlv packages
+        run: pip install ./bindings/python/opentlv-core ./bindings/python/opentlv
+
+      - name: Install test dependencies
+        run: pip install pytest
+
+      - name: Test
+        run: pytest bindings/python/opentlv/tests
+
+      - name: Common compiled Query corpus through Python facade
+        run: python tests/query/python_facade.py
+
+      - name: Run examples
+        shell: bash
+        run: |
+          set -e
+          for example in bindings/python/opentlv/examples/*.py; do
+            echo "::group::$example"
+            python "$example"
+            echo "::endgroup::"
+          done

@@ -1,0 +1,65 @@
+=== dependencies (exit 0) ===
+colorama==0.4.6
+hatchling==1.32.4
+iniconfig==2.3.1
+opentlv @ file:///D:/Projects/marekcingel/OpenTLV/opentlv/bindings/python/opentlv
+opentlv-core @ file:///D:/Projects/marekcingel/OpenTLV/opentlv/bindings/python/opentlv-core
+packaging==26.3
+pathspec==1.1.1
+pluggy==1.7.0
+Pygments==2.21.0
+pytest==9.1.1
+scikit_build_core==1.1.1
+tomlkit==0.15.2
+trove-classifiers==2026.9.21.13
+
+=== pytest (exit 0) ===
+........................................................................ [ 24%]
+........................................................................ [ 48%]
+........................................................................ [ 72%]
+........................................................................ [ 96%]
+...........                                                              [100%]
+299 passed in 1.10s
+
+=== query-facade (exit 0) ===
+Python public Query facade: 171 common fixtures, 664 optimized/backend checks passed
+
+=== example-codec (exit 0) ===
+tag 9F02: amount = 12345
+rejected: schema constraint violated
+
+=== example-document (exit 0) ===
+original label: b'OLD\x00'
+encoded 21 bytes: 6F 0A 84 03 41 42 43 50 03 4E 45 57 9F 02 06 00 00 00 00 01 00
+
+=== example-parse (exit 0) ===
+tag=6F length=10 value=84 03 41 42 43 A5 03 50 01 01
+  tag=84 length=3 value=41 42 43
+  tag=A5 length=3 value=50 01 01
+    tag=50 length=1 value=01
+truncated input: truncated input (offset 2)
+
+=== example-query (exit 0) ===
+6F/A5/50 -> tag 50 value 01
+rejected: syntax error
+
+=== example-quick_start (exit 0) ===
+Hello, world!
+
+=== example-validate (exit 0) ===
+Document conforms to the schema
+Incomplete document rejected: schema constraint violated
+
+=== example-write (exit 0) ===
+wrote 12 bytes: 6F 0A 84 03 41 42 43 A5 03 50 01 01
+
+=== example-writer (exit 0) ===
+wrote 1004 bytes without ever sizing a buffer
+rejected: invalid tag
+
+=== imports (exit 0) ===
+D:\Projects\marekcingel\OpenTLV\opentlv-python\build\issue1-venv\Lib\site-packages\opentlv\__init__.py
+D:\Projects\marekcingel\OpenTLV\opentlv-python\build\issue1-venv\Lib\site-packages\_opentlv.pyd
+Core version: 0.7.1
+{'HAS_BER': 1, 'HAS_CER': 1, 'HAS_DER': 1, 'HAS_EMV': 1, 'HAS_LLDP': 1, 'HAS_NFC': 1}
+

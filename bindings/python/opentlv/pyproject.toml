@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opentlv"
+version = "0.1.0"
+description = "Python bindings for OpenTLV, a portable C99 library for reading, writing and validating TLV data"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["opentlv-core"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opentlv"]

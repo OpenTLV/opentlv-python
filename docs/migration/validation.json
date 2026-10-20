@@ -1,0 +1,556 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "source_repository": "https://github.com/OpenTLV/opentlv",
+  "source_commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+  "source_worktree_before_baseline": "clean",
+  "scope": "Local Windows source migration comparison; not standalone or hosted validation",
+  "toolchain": {
+    "python": "3.11.4",
+    "cmake": "3.31.7",
+    "generator": "Visual Studio 17 2022",
+    "compiler": "MSVC 19.44.35222.0",
+    "msbuild": "17.14.23+b0019275e",
+    "windows_sdk": "10.0.26100.0",
+    "pip": "23.1.2",
+    "pytest": "9.1.1",
+    "scikit_build_core": "1.1.1",
+    "hatchling": "1.32.4"
+  },
+  "native_wheel_tag": "cp311-abi3-win_amd64",
+  "linked_core_version": "0.7.1",
+  "comparison": {
+    "baseline": "Original clean Core checkout",
+    "imported": "Exact Core Git archive overlaid with all 77 imported blobs at their original source paths",
+    "archive_metadata": "Temporary opentlv-source.txt: version=0.7.1 and the exact source commit; Core revision counter is 0 in archive mode instead of baseline 25",
+    "installation": "Same isolated venv; both packages force-rebuilt and reinstalled for the imported run"
+  },
+  "runs": {
+    "baseline": {
+      "source_commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+      "python": "3.11.4 (tags/v3.11.4:d2340ef, Jun  7 2023, 05:45:37) [MSC v.1934 64 bit (AMD64)]",
+      "platform": "Windows-10-10.0.26200-SP0",
+      "runs": [
+        {
+          "name": "dependencies",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-m",
+            "pip",
+            "freeze"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.8,
+          "log": "build/issue1-baseline/dependencies.log",
+          "log_sha256": "09cecbe895e95a902358dc6d39bc0c227b83947ef9d7433b8ee3a6bc265fa400"
+        },
+        {
+          "name": "native-build",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-build-isolation",
+            "--no-deps",
+            "--no-cache-dir",
+            "-v",
+            "-Cbuild-dir=D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-baseline\\native",
+            "./bindings/python/opentlv-core"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 174.62,
+          "log": "build/issue1-baseline/native-build.log",
+          "log_sha256": "205844b22595484d9cd0cbc0654cea6bbbd0f0bf2b70cc489d3cd17336068e46"
+        },
+        {
+          "name": "facade-build",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-build-isolation",
+            "--no-deps",
+            "--no-cache-dir",
+            "./bindings/python/opentlv"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 1.66,
+          "log": "build/issue1-baseline/facade-build.log",
+          "log_sha256": "8b5120cdbac2b9fc42b94d297d5a48e119c3738bda66a837ea21d6ce9804791f"
+        },
+        {
+          "name": "pytest",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "-q",
+            "bindings/python/opentlv/tests"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 1.34,
+          "log": "build/issue1-baseline/pytest.log",
+          "log_sha256": "6ec8bfad44b567b9cdb0095f875a56a8500d40b386931bc909c20c0dafe4960d"
+        },
+        {
+          "name": "query-facade",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "tests/query/python_facade.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.38,
+          "log": "build/issue1-baseline/query-facade.log",
+          "log_sha256": "62592919e37813c57d432b1503e10e9ac8153a96ffa805fe8c0a2f7508383160"
+        },
+        {
+          "name": "example-codec",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\codec.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.17,
+          "log": "build/issue1-baseline/example-codec.log",
+          "log_sha256": "b9a1f94f56202a4b3bdf962b7169212cb8426e8def3cb2d66cb006b6a3af4a1c"
+        },
+        {
+          "name": "example-document",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\document.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.22,
+          "log": "build/issue1-baseline/example-document.log",
+          "log_sha256": "afd61671de1c6756a5cb8054931e5d63f662f8ce96b43b3450ac497f0f69efb4"
+        },
+        {
+          "name": "example-parse",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\parse.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.22,
+          "log": "build/issue1-baseline/example-parse.log",
+          "log_sha256": "bc36bf4467baa372280ca96a610f5ff41d5caa7ef5a8feba203c7137a105983e"
+        },
+        {
+          "name": "example-query",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\query.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.17,
+          "log": "build/issue1-baseline/example-query.log",
+          "log_sha256": "a5312d9d5c9303dba451bd47c440a89de8e25317533099319c115d1d059380a1"
+        },
+        {
+          "name": "example-quick_start",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\quick_start.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.22,
+          "log": "build/issue1-baseline/example-quick_start.log",
+          "log_sha256": "66b01763ad80316783341083c02317e7fdda4391e58cbf02f26f2a92257c5b92"
+        },
+        {
+          "name": "example-validate",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\validate.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.19,
+          "log": "build/issue1-baseline/example-validate.log",
+          "log_sha256": "5128ec0a27991e4e866d35840839f9c5508454bb8a60309af9ab6565a0d2f9db"
+        },
+        {
+          "name": "example-write",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\write.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.17,
+          "log": "build/issue1-baseline/example-write.log",
+          "log_sha256": "1db0691db65f787fecdc74895b03ddfd55472c9d95321b6d08234601f6be2372"
+        },
+        {
+          "name": "example-writer",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv\\bindings\\python\\opentlv\\examples\\writer.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.19,
+          "log": "build/issue1-baseline/example-writer.log",
+          "log_sha256": "ef8d3f89cb2ce109b0253101c3b955dccfb4adfed316d60b9e3cb4d195e89aef"
+        },
+        {
+          "name": "imports",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "-c",
+            "import opentlv, _opentlv; print(opentlv.__file__); print(_opentlv.__file__); print('Core version:', opentlv.__version__); print({x: getattr(_opentlv, x) for x in dir(_opentlv) if x.startswith('HAS_')})"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+          "exit_code": 0,
+          "seconds": 0.19,
+          "log": "build/issue1-baseline/imports.log",
+          "log_sha256": "f257c57cefe5ae38b59ed7812430fefe1b5f1534367d2d4134e70b8d7ffc1be2"
+        }
+      ],
+      "cmake_options": {
+        "OPENTLV_BLUETOOTH": "ON",
+        "OPENTLV_BUILD_BENCHMARKS": "OFF",
+        "OPENTLV_BUILD_CXX": "OFF",
+        "OPENTLV_BUILD_DOCS": "OFF",
+        "OPENTLV_BUILD_EXAMPLES": "OFF",
+        "OPENTLV_BUILD_FUZZING": "OFF",
+        "OPENTLV_BUILD_INTEGRATION_TESTS": "ON",
+        "OPENTLV_BUILD_MEMCHECK": "OFF",
+        "OPENTLV_BUILD_PROPERTY_TESTS": "OFF",
+        "OPENTLV_BUILD_PYTHON": "ON",
+        "OPENTLV_BUILD_QUERY_TESTS": "ON",
+        "OPENTLV_BUILD_SHARED_LIBS": "OFF",
+        "OPENTLV_BUILD_TESTS": "OFF",
+        "OPENTLV_BUILD_UNIT_TESTS": "ON",
+        "OPENTLV_BUILD_WASM": "OFF",
+        "OPENTLV_CODEC": "ON",
+        "OPENTLV_DHCP": "ON",
+        "OPENTLV_DOCUMENT": "ON",
+        "OPENTLV_EMV": "ON",
+        "OPENTLV_FORMAT_ASN1": "ON",
+        "OPENTLV_FORMAT_BER": "ON",
+        "OPENTLV_FORMAT_CER": "ON",
+        "OPENTLV_FORMAT_DER": "ON",
+        "OPENTLV_LLDP": "ON",
+        "OPENTLV_NFC": "ON",
+        "OPENTLV_QUERY": "ON",
+        "OPENTLV_QUERY_FRONTEND": "ON",
+        "OPENTLV_QUERY_SET_OPERATIONS": "ON",
+        "OPENTLV_READER": "ON",
+        "OPENTLV_SCHEMA": "ON",
+        "OPENTLV_WARNINGS_AS_ERRORS": "OFF",
+        "OPENTLV_WRITER": "ON"
+      },
+      "summary": {
+        "pytest_passed": 299,
+        "query_fixtures": 171,
+        "query_checks": 664,
+        "examples_passed": 8
+      },
+      "test_output": "docs/migration/windows-baseline.log",
+      "test_output_sha256": "81bb50b588744d9b86ac0f9edadf45773bfc3cf0d05f30b37b88fd491aa258c4"
+    },
+    "imported": {
+      "source_commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+      "python": "3.11.4 (tags/v3.11.4:d2340ef, Jun  7 2023, 05:45:37) [MSC v.1934 64 bit (AMD64)]",
+      "platform": "Windows-10-10.0.26200-SP0",
+      "runs": [
+        {
+          "name": "dependencies",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-m",
+            "pip",
+            "freeze"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.84,
+          "log": "build/issue1-imported/dependencies.log",
+          "log_sha256": "7101d175f650ef63aa125737fc48742bc2047ec968a6d3cc3002452ca0979f17"
+        },
+        {
+          "name": "native-build",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-build-isolation",
+            "--no-deps",
+            "--no-cache-dir",
+            "--force-reinstall",
+            "-v",
+            "-Cbuild-dir=D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported\\native",
+            "./bindings/python/opentlv-core"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 158.03,
+          "log": "build/issue1-imported/native-build.log",
+          "log_sha256": "16fb3922f1fa607c8818ea251ef7575aea9e6761404c243c7ad83a2d609cdbd0"
+        },
+        {
+          "name": "facade-build",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-build-isolation",
+            "--no-deps",
+            "--no-cache-dir",
+            "--force-reinstall",
+            "./bindings/python/opentlv"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 1.7,
+          "log": "build/issue1-imported/facade-build.log",
+          "log_sha256": "7b69364f4c759cd77d4320ad9eb32f26b6ecd2a57152b7b59a414f7b0b9bf94d"
+        },
+        {
+          "name": "pytest",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "-q",
+            "bindings/python/opentlv/tests"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 1.59,
+          "log": "build/issue1-imported/pytest.log",
+          "log_sha256": "b2e1abbb3883b45849492895772e83fbc162f17a5120b2571423a1dcab6ba1f8"
+        },
+        {
+          "name": "query-facade",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "tests/query/python_facade.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.26,
+          "log": "build/issue1-imported/query-facade.log",
+          "log_sha256": "62592919e37813c57d432b1503e10e9ac8153a96ffa805fe8c0a2f7508383160"
+        },
+        {
+          "name": "example-codec",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\codec.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.19,
+          "log": "build/issue1-imported/example-codec.log",
+          "log_sha256": "b9a1f94f56202a4b3bdf962b7169212cb8426e8def3cb2d66cb006b6a3af4a1c"
+        },
+        {
+          "name": "example-document",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\document.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.19,
+          "log": "build/issue1-imported/example-document.log",
+          "log_sha256": "afd61671de1c6756a5cb8054931e5d63f662f8ce96b43b3450ac497f0f69efb4"
+        },
+        {
+          "name": "example-parse",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\parse.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.2,
+          "log": "build/issue1-imported/example-parse.log",
+          "log_sha256": "bc36bf4467baa372280ca96a610f5ff41d5caa7ef5a8feba203c7137a105983e"
+        },
+        {
+          "name": "example-query",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\query.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.2,
+          "log": "build/issue1-imported/example-query.log",
+          "log_sha256": "a5312d9d5c9303dba451bd47c440a89de8e25317533099319c115d1d059380a1"
+        },
+        {
+          "name": "example-quick_start",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\quick_start.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.2,
+          "log": "build/issue1-imported/example-quick_start.log",
+          "log_sha256": "66b01763ad80316783341083c02317e7fdda4391e58cbf02f26f2a92257c5b92"
+        },
+        {
+          "name": "example-validate",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\validate.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.19,
+          "log": "build/issue1-imported/example-validate.log",
+          "log_sha256": "5128ec0a27991e4e866d35840839f9c5508454bb8a60309af9ab6565a0d2f9db"
+        },
+        {
+          "name": "example-write",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\write.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.2,
+          "log": "build/issue1-imported/example-write.log",
+          "log_sha256": "1db0691db65f787fecdc74895b03ddfd55472c9d95321b6d08234601f6be2372"
+        },
+        {
+          "name": "example-writer",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core\\bindings\\python\\opentlv\\examples\\writer.py"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.2,
+          "log": "build/issue1-imported/example-writer.log",
+          "log_sha256": "ef8d3f89cb2ce109b0253101c3b955dccfb4adfed316d60b9e3cb4d195e89aef"
+        },
+        {
+          "name": "imports",
+          "command": [
+            "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-venv\\Scripts\\python.exe",
+            "-B",
+            "-c",
+            "import opentlv, _opentlv; print(opentlv.__file__); print(_opentlv.__file__); print('Core version:', opentlv.__version__); print({x: getattr(_opentlv, x) for x in dir(_opentlv) if x.startswith('HAS_')})"
+          ],
+          "cwd": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue1-imported-core",
+          "exit_code": 0,
+          "seconds": 0.17,
+          "log": "build/issue1-imported/imports.log",
+          "log_sha256": "f257c57cefe5ae38b59ed7812430fefe1b5f1534367d2d4134e70b8d7ffc1be2"
+        }
+      ],
+      "cmake_options": {
+        "OPENTLV_BLUETOOTH": "ON",
+        "OPENTLV_BUILD_BENCHMARKS": "OFF",
+        "OPENTLV_BUILD_CXX": "OFF",
+        "OPENTLV_BUILD_DOCS": "OFF",
+        "OPENTLV_BUILD_EXAMPLES": "OFF",
+        "OPENTLV_BUILD_FUZZING": "OFF",
+        "OPENTLV_BUILD_INTEGRATION_TESTS": "ON",
+        "OPENTLV_BUILD_MEMCHECK": "OFF",
+        "OPENTLV_BUILD_PROPERTY_TESTS": "OFF",
+        "OPENTLV_BUILD_PYTHON": "ON",
+        "OPENTLV_BUILD_QUERY_TESTS": "ON",
+        "OPENTLV_BUILD_SHARED_LIBS": "OFF",
+        "OPENTLV_BUILD_TESTS": "OFF",
+        "OPENTLV_BUILD_UNIT_TESTS": "ON",
+        "OPENTLV_BUILD_WASM": "OFF",
+        "OPENTLV_CODEC": "ON",
+        "OPENTLV_DHCP": "ON",
+        "OPENTLV_DOCUMENT": "ON",
+        "OPENTLV_EMV": "ON",
+        "OPENTLV_FORMAT_ASN1": "ON",
+        "OPENTLV_FORMAT_BER": "ON",
+        "OPENTLV_FORMAT_CER": "ON",
+        "OPENTLV_FORMAT_DER": "ON",
+        "OPENTLV_LLDP": "ON",
+        "OPENTLV_NFC": "ON",
+        "OPENTLV_QUERY": "ON",
+        "OPENTLV_QUERY_FRONTEND": "ON",
+        "OPENTLV_QUERY_SET_OPERATIONS": "ON",
+        "OPENTLV_READER": "ON",
+        "OPENTLV_SCHEMA": "ON",
+        "OPENTLV_WARNINGS_AS_ERRORS": "OFF",
+        "OPENTLV_WRITER": "ON"
+      },
+      "summary": {
+        "pytest_passed": 299,
+        "query_fixtures": 171,
+        "query_checks": 664,
+        "examples_passed": 8
+      },
+      "test_output": "docs/migration/windows-imported.log",
+      "test_output_sha256": "e3048f3379f4b0c68e513b72e48a535cc74bf0aa31eeb123fbf38a760c11fc27"
+    }
+  },
+  "unrun": [
+    "Linux",
+    "macOS",
+    "other Python versions",
+    "reduced configurations",
+    "hosted CI",
+    "standalone install",
+    "release/publication"
+  ],
+  "setup_failures": [
+    {
+      "stage": "Initial imported build with CMAKE_BUILD_PARALLEL_LEVEL=8",
+      "exit_code": 1,
+      "description": "MSBuild stopped after Checking Build System, without a specific diagnostic",
+      "cause": "Not established",
+      "resolution": "Rebuilt serially with CMAKE_BUILD_PARALLEL_LEVEL=1",
+      "log": "build/issue1-imported/parallel-build-failed.log",
+      "log_sha256": "684ceaa602d1dc3fd3d0a6c14e2ec87568b48ef661f7e20fa2ea8a4c85d81e01"
+    }
+  ]
+}

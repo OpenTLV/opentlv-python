@@ -1,0 +1,2 @@
+# Preserve the imported Git blobs when checking out on Windows.
+* text=auto eol=lf
