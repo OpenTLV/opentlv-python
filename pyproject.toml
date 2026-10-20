@@ -11,14 +11,11 @@ requires-python = ">=3.11"
 license = "MIT"
 
 [tool.scikit-build]
-cmake.source-dir = "../../.."
+cmake.version = ">=3.26"
 wheel.packages = []
 wheel.py-api = "cp311"
-
-[tool.scikit-build.cmake.define]
-OPENTLV_BUILD_PYTHON = "ON"
-OPENTLV_BUILD_CXX = "OFF"
-OPENTLV_BUILD_TESTS = "OFF"
-OPENTLV_BUILD_EXAMPLES = "OFF"
-OPENTLV_BUILD_SHARED_LIBS = "OFF"
-OPENTLV_WARNINGS_AS_ERRORS = "OFF"
+build.targets = ["_opentlv"]
+install.components = ["Python"]
+sdist.include = ["CMakeLists.txt", "cmake/**", "scripts/**", "bindings/**"]
+sdist.exclude = ["build/**", "dist/**", ".venv/**", ".vscode/**",
+                 "**/__pycache__/**", "**/*.pyc"]

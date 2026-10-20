@@ -1,6 +1,6 @@
 # Using OpenTLV from Python
 
-Start with setup below, then run the [Python quick start](../getting-started/README.md#quick-start)
+Start with setup below, then run the [Python quick start](../../bindings/python/opentlv/examples/quick_start.py)
 for input, expected output and the public API. You can use this guide without
 studying native C implementation contracts.
 
@@ -12,29 +12,23 @@ details, see [Python bindings](../development/python.md).
 
 ## Setup
 
-`Format.LLDP` selects [LLDP framing](../formats/lldp/README.md) when the native
-extension was built with `OPENTLV_LLDP=ON`. It is absent when the option is OFF;
-`_opentlv.HAS_LLDP` reports the compiled selection.
-
-The BER, CER and DER presets likewise follow `OPENTLV_FORMAT_BER`,
-`OPENTLV_FORMAT_CER` and `OPENTLV_FORMAT_DER`, with corresponding `HAS_BER`,
-`HAS_CER` and `HAS_DER` flags. Disabled presets are absent from `Format`.
-Without BER, pass an explicit format to Reader, Writer, Document,
-`encoded_size()` and schema validation; omitting it raises `ValueError`.
-`FixedFormat` remains available for Reader and Writer in every build.
-EMV amount functions raise `NotImplementedError` when `OPENTLV_EMV`
-is disabled. The Python binding still requires `OPENTLV_DOCUMENT=ON`.
+The standalone package enables every supported Core capability and format.
+BER, CER, DER, EMV, LLDP and NFC providers, fixed formats, Document and the
+existing EMV amount functions are available. Native `HAS_*` flags remain
+unchanged and report enabled providers. Reduced-feature Python packages are
+not supported.
 
 Neither package is published to PyPI yet. Install both by path from a
 checkout of the repository, in one `pip install` call so the `opentlv`
 package's dependency on `opentlv-core` resolves to the local build:
 
 ```sh
-pip install ./bindings/python/opentlv-core ./bindings/python/opentlv
+python -m pip install . ./bindings/python/opentlv
 ```
 
-This requires Python 3.11 or newer, CMake 3.26 or newer and a C99 compiler;
-see [Build](../development/python.md#build).
+This requires Python 3.11 or newer, Git, CMake 3.26 or newer and a C99 compiler;
+see [Build](../development/python.md#build). The root native build
+selects its pinned Core dependency independently of a sibling checkout.
 
 ```python
 import opentlv
@@ -53,7 +47,7 @@ and a `value` that is a `memoryview` of retained immutable input storage.
 Sequential Reader treats constructed Values as opaque. Use `TreeReader` for
 canonical preorder traversal, limits and subtree skipping. Both Readers support
 incremental windows and Visitors; `QueryMatcher` adds resumable Query processing.
-See the [Reader and Query facade contract](../concepts/bindings.md#rust-and-python-reader-and-query-facades).
+See the [Reader and Query facade contract](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/concepts/bindings.md#rust-and-python-reader-and-query-facades).
 
 ```python
 import opentlv
@@ -209,7 +203,7 @@ Navigate with `document.first`/`for node in document` (top-level nodes, in
 encoding order), `node.first_child`/`for child in node` (a constructed
 node's children), `node.next`/`node.parent`, or search with
 `document.find(tag, parent=...)`, `node.find(tag)` or
-`document.find_path("6F/A5/50")`, a [path query](queries.md) (a `/`-separated
+`document.find_path("6F/A5/50")`, a [path query](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/guides/queries.md) (a `/`-separated
 path of hexadecimal tags).
 `document.insert(tag, value, parent=..., before=...)` inserts a new element;
 assigning `node.value` replaces one. For both, a value of a tag the
@@ -260,7 +254,7 @@ itself; conversion detail is `error.codec_detail`. A Schema Query failure's
 text are the error's own. A rejected
 path text raises `InvalidSyntaxError` (or `LimitError`) with Query detail and no
 Reader `operation`. Codec and Schema categories are typed too. See the
-[binding diagnostic reference](../reference/errors.md#binding-diagnostics).
+[binding diagnostic reference](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/reference/errors.md#binding-diagnostics).
 
 ```python
 try:
@@ -298,7 +292,7 @@ the capsule is garbage collected or `close()` drops Python's only reference
 to it. `Node` retains its Document and validates shared ownership tokens before
 using its internal pointer. This protects aliases and descendants from use after
 erasure, replacement or close. Remaining parity gaps are listed in the
-[binding capability matrix](../concepts/bindings.md#capability-implementation-matrix).
+[binding capability matrix](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/concepts/bindings.md#capability-implementation-matrix).
 
 ## Tree measurement, preservation and materialization
 
@@ -379,7 +373,7 @@ programs and validates through `validate_buffer(data, **limits)` or
 programs. Limits bound depth, nodes, work, selected contexts and Document Value
 snapshots. Failures retain the rule index, Query detail and owned Schema
 diagnostics. Provider callbacks cannot mutate or close a Document under
-validation. See the [release requirements](../development/query-release.md).
+validation. See the [release requirements](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/development/query-release.md).
 
 The separate V1 `QueryMatcher` preserves matching state across Visitor STOP and
 TreeReader input replacement. `rebind(equivalent_query)` copies an equivalent
@@ -389,5 +383,5 @@ caller. `matches(tag, depth)` feeds every canonical preorder item manually.
 
 ## Next step
 
-Use [the basic model](../concepts/learning-model.md) to choose borrowed processing
-or owned editing, then [processing choices](processing.md) for your next task.
+Use [the basic model](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/concepts/learning-model.md) to choose borrowed processing
+or owned editing, then [processing choices](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/guides/processing.md) for your next task.

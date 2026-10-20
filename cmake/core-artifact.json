@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "repository": "OpenTLV/opentlv",
+  "version": "0.7.1",
+  "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+  "release_tag": null,
+  "allow_verified_source": true
+}
