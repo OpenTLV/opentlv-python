@@ -1,0 +1,392 @@
+{
+  "source_repository": "https://github.com/OpenTLV/opentlv",
+  "source_commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+  "source_directory": "bindings/python",
+  "files": [
+    {
+      "source": ".github/workflows/python.yml",
+      "destination": "docs/migration/original-python.yml",
+      "sha256": "7f316b40054148b41785bd1d162b97077d6b82c487a054f8437ff18e685eae8d"
+    },
+    {
+      "source": "bindings/common/path_query.h",
+      "destination": "bindings/common/path_query.h",
+      "sha256": "f6a328b062e6e22d61c644b7de0b6ce51e4e3b6bb23ecdbf0ba5b85d89d9ee2a"
+    },
+    {
+      "source": "bindings/common/query_schema.h",
+      "destination": "bindings/common/query_schema.h",
+      "sha256": "7abe853c2eb5269b8bbaf7569c644e8d370fe790a1e056aefac62c0d543aa2e8"
+    },
+    {
+      "source": "bindings/python/opentlv-core/CMakeLists.txt",
+      "destination": "bindings/python/opentlv-core/CMakeLists.txt",
+      "sha256": "bc102991ca379f3b8a2ac7ea62418dbffb905a5498a87ac980e2389a3678564e"
+    },
+    {
+      "source": "bindings/python/opentlv-core/README.md",
+      "destination": "bindings/python/opentlv-core/README.md",
+      "sha256": "bfc2f10de435a1e36bd0a9020ac14ce9415537235e198781661f8a34c4c8bc1f"
+    },
+    {
+      "source": "bindings/python/opentlv-core/pyproject.toml",
+      "destination": "bindings/python/opentlv-core/pyproject.toml",
+      "sha256": "18a6117d0c531dfe28bcdaabc1b6c040ac091042ee55f553a3f3cbfae3f371e5"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/format.c",
+      "destination": "bindings/python/opentlv-core/src/format.c",
+      "sha256": "57ee47c562c72af3d675abb72663c12b9503a8755e523e6c74f0360b5b3d10ac"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/format.h",
+      "destination": "bindings/python/opentlv-core/src/format.h",
+      "sha256": "c278153fc73ba2fcfb389bdd47c3818776a43d6522b4352e9d93aa96ad7081e4"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/formats/ber.c",
+      "destination": "bindings/python/opentlv-core/src/formats/ber.c",
+      "sha256": "57c8674e285c9437d7ae58e02927bdc48b3cf3584432c151208411d759057a6d"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/formats/cer.c",
+      "destination": "bindings/python/opentlv-core/src/formats/cer.c",
+      "sha256": "4912125122aab3e57cf95600498c797d20077450abd1d9748e0567e3c27100c7"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/formats/der.c",
+      "destination": "bindings/python/opentlv-core/src/formats/der.c",
+      "sha256": "16e2489aa261d7f0b30e328b69980467b364b3284a6f81af1c93ae2e3614ba78"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/formats/emv.c",
+      "destination": "bindings/python/opentlv-core/src/formats/emv.c",
+      "sha256": "7be0ba743ee8e1454ec16b5845b2f822f9129f566ecc2216e158326346e6faa4"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/formats/lldp.c",
+      "destination": "bindings/python/opentlv-core/src/formats/lldp.c",
+      "sha256": "3d3b7a20cbe4931f158ed26aba9302df047fd02e5a141d336b7b8637c5af3ad0"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/formats/nfc_type2.c",
+      "destination": "bindings/python/opentlv-core/src/formats/nfc_type2.c",
+      "sha256": "23d24c141b9800c014d08a07ff4a56673e7109c0ba3984639eaed58a9db19c64"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/location.h",
+      "destination": "bindings/python/opentlv-core/src/location.h",
+      "sha256": "65f0b2340635c710c16a5b444aacc73f93f1b3db4632f7646d9893f90d8c4e9b"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/module.c",
+      "destination": "bindings/python/opentlv-core/src/module.c",
+      "sha256": "413ea127ac4dbfe80ca91634f025c0ea1d930336d2e9790599a66870bd507cb3"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/query.c",
+      "destination": "bindings/python/opentlv-core/src/query.c",
+      "sha256": "64b337083aac81d94c77bee5243f256a7b62521ed1c0fd80932bc097150ef1cd"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/query.h",
+      "destination": "bindings/python/opentlv-core/src/query.h",
+      "sha256": "9d1a220df5c3d90f2868e144aa5453ad5e48afb9206200a4d12fb6174087681f"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/reader.c",
+      "destination": "bindings/python/opentlv-core/src/reader.c",
+      "sha256": "f588fe1ab1159dfef38eeb26da9d4be01aab7fcc90f3a8362f10981bc43e9863"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/reader.h",
+      "destination": "bindings/python/opentlv-core/src/reader.h",
+      "sha256": "e3dbaeb0f09e8217039562bc36e5f02c3f78af30a7b99367bc3481d4df3c1186"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/schema.c",
+      "destination": "bindings/python/opentlv-core/src/schema.c",
+      "sha256": "ac7ef73aa2b208eb9d828f08e90fd8e412c9665c19c21b9387cb417fd2f36993"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/schema.h",
+      "destination": "bindings/python/opentlv-core/src/schema.h",
+      "sha256": "0930b8b5f6d4155ad3957ee6d147ac08ed98d97860b5e555273959dfa9e9a0f4"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/writer.c",
+      "destination": "bindings/python/opentlv-core/src/writer.c",
+      "sha256": "6faedbd2d9b8dd04812eef7a6bc6382583a84ae36c0793cf5ae599af87ec4fca"
+    },
+    {
+      "source": "bindings/python/opentlv-core/src/writer.h",
+      "destination": "bindings/python/opentlv-core/src/writer.h",
+      "sha256": "8a9bcecddae74db0efe1e1c42f3eb9fa062f613b98ab0162bdbab72034126317"
+    },
+    {
+      "source": "bindings/python/opentlv/README.md",
+      "destination": "bindings/python/opentlv/README.md",
+      "sha256": "bb201bfcc4377efdfc2386a218a451d1d7f74a262577a72e85979350f9cae1d2"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/codec.py",
+      "destination": "bindings/python/opentlv/examples/codec.py",
+      "sha256": "21d031e2052ebbefcc02cd790912f1c488becc5c4a840f395abf9532e70ca67c"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/document.py",
+      "destination": "bindings/python/opentlv/examples/document.py",
+      "sha256": "c9c18b0464663aa8472cb4183ae920f55949e4a497874af0cae9c6cee10fde09"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/parse.py",
+      "destination": "bindings/python/opentlv/examples/parse.py",
+      "sha256": "214f9acf8d6f9c04b07be8fb441950ee200b453a40336f6def291e48f46b9add"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/query.py",
+      "destination": "bindings/python/opentlv/examples/query.py",
+      "sha256": "72c3d605375eb28dfeb21ca6c5da9456c734d1535b404fed0bd972963fcb9e78"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/quick_start.py",
+      "destination": "bindings/python/opentlv/examples/quick_start.py",
+      "sha256": "33f6f62f30451fa35408e43eed35a8a687d49932f91b91b08b0e7cb29a821da8"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/validate.py",
+      "destination": "bindings/python/opentlv/examples/validate.py",
+      "sha256": "4788dfd66069afcf441f0f92299aec6740967df36eb0e35b4224abb80d1813e7"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/write.py",
+      "destination": "bindings/python/opentlv/examples/write.py",
+      "sha256": "bfa01c7c9c6f2ca1d86ad3f7e59ab2decf59c31c34aee13ed394758248f73581"
+    },
+    {
+      "source": "bindings/python/opentlv/examples/writer.py",
+      "destination": "bindings/python/opentlv/examples/writer.py",
+      "sha256": "37f05c50bbc6ba8d409d568f7b53ec8452059ec6b0e77493897ad40c4ce626ce"
+    },
+    {
+      "source": "bindings/python/opentlv/pyproject.toml",
+      "destination": "bindings/python/opentlv/pyproject.toml",
+      "sha256": "8eacde810564a3d9159812dd73dc44391cca7f0b23bd97d9607988c48a93ab6c"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/__init__.py",
+      "destination": "bindings/python/opentlv/src/opentlv/__init__.py",
+      "sha256": "2e0b09751bdbdca4318080b1c31260bdcacf6ba2b4c16cedec5113d726552db0"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/codec.py",
+      "destination": "bindings/python/opentlv/src/opentlv/codec.py",
+      "sha256": "326afb0bf63dc7078f3e42fb6c6b0731d3f8148c5b37fe5d267aa865881d53d5"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/cursor.py",
+      "destination": "bindings/python/opentlv/src/opentlv/cursor.py",
+      "sha256": "71851dfd4b97246c0fb9c16d9191988bc140c39718ba927c16c3bc18fbe468f5"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/definition.py",
+      "destination": "bindings/python/opentlv/src/opentlv/definition.py",
+      "sha256": "b145f798632832c68da667abe73a584b1a9b810325a530c3515fdde3e848e80d"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/diagnostic.py",
+      "destination": "bindings/python/opentlv/src/opentlv/diagnostic.py",
+      "sha256": "1b83c1b21081feb05a54144800520d030a0de707a6c495bae7c15dc4024206b6"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/document.py",
+      "destination": "bindings/python/opentlv/src/opentlv/document.py",
+      "sha256": "a681c72267d7456bfdcb51f826a5a657447e4743235fc3a60be57ff93f5c4094"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/element.py",
+      "destination": "bindings/python/opentlv/src/opentlv/element.py",
+      "sha256": "bc156dbc0e67c9e3235148aa7af305d8ac92f2e31194b6cd64ab2531f9bd93bf"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/error.py",
+      "destination": "bindings/python/opentlv/src/opentlv/error.py",
+      "sha256": "38f6a8003b6c2674c3f140ef4df2b5582c8c730808ddd2f4e32d293f35995bbd"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/fixed_format.py",
+      "destination": "bindings/python/opentlv/src/opentlv/fixed_format.py",
+      "sha256": "60d38cd140428f231361d0493e4983efda8cfd6e8920f7865b4301177b390756"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/format.py",
+      "destination": "bindings/python/opentlv/src/opentlv/format.py",
+      "sha256": "609ff3792581418b5e747a3e899f37d797b6731688985a5e0f37ead281b5c8da"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/location.py",
+      "destination": "bindings/python/opentlv/src/opentlv/location.py",
+      "sha256": "45d61b2cdd897b5e6e8e8a6176f4dd1d17362c519c4eeca6c632083bd1a2ddee"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/program.py",
+      "destination": "bindings/python/opentlv/src/opentlv/program.py",
+      "sha256": "4f898225b2919993033fc4a5363742b72af21eb0176f309895a264195f4ad451"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/query.py",
+      "destination": "bindings/python/opentlv/src/opentlv/query.py",
+      "sha256": "93348003ce3fed5d182ec9eeb421263513b0b1df18fe39d3c6d8ac480d5ef7da"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/reader.py",
+      "destination": "bindings/python/opentlv/src/opentlv/reader.py",
+      "sha256": "ef0d082060df19577fa32ad7965846862643ef770ef80f741b2b2ff132cf448a"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/schema.py",
+      "destination": "bindings/python/opentlv/src/opentlv/schema.py",
+      "sha256": "2161b0a6198b36ea2633ae7e5f37584fc248bbcc155d7cc8be55dbf84ad7737a"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/tag.py",
+      "destination": "bindings/python/opentlv/src/opentlv/tag.py",
+      "sha256": "770fc6097e541afb4b8e28f7771747493ddad17a6dd34c08a70a9c75e980f2f9"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/tree_writer.py",
+      "destination": "bindings/python/opentlv/src/opentlv/tree_writer.py",
+      "sha256": "419578642ecce167bba812fe620dc62f35de2ab185c24c9b143fda396c142a42"
+    },
+    {
+      "source": "bindings/python/opentlv/src/opentlv/writer.py",
+      "destination": "bindings/python/opentlv/src/opentlv/writer.py",
+      "sha256": "f5902778793be580baaa85833f8a2d63d62cdb2eea8cace6f16d34c2bd3dc975"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_codec.py",
+      "destination": "bindings/python/opentlv/tests/test_codec.py",
+      "sha256": "6b2eda3474b45847dd9692e03de4fc6be1d291db533c7b87ad50fb6cbaaf63f7"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_components.py",
+      "destination": "bindings/python/opentlv/tests/test_components.py",
+      "sha256": "33a6abbddb5026ac8a9b68c8e1269a742c38d9f5e08b01f12440f47b601dcd16"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_definition.py",
+      "destination": "bindings/python/opentlv/tests/test_definition.py",
+      "sha256": "de1c7cdb1fb91ad0eca729d06035845c2f195241412189063d7e7ce9bd31cd64"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_diagnostic.py",
+      "destination": "bindings/python/opentlv/tests/test_diagnostic.py",
+      "sha256": "b099d7f33765d09b0794abe15628ea9ccabd7c3a11e0c443c26d1371d594a5fd"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_diagnostic_vocabulary.py",
+      "destination": "bindings/python/opentlv/tests/test_diagnostic_vocabulary.py",
+      "sha256": "3effdeecf903a1479b293bf19ff3c7b06abe9639784bd833737a76e33ed83db0"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_document.py",
+      "destination": "bindings/python/opentlv/tests/test_document.py",
+      "sha256": "b167121bf440a6e6e4c46af7a7c093c59cccad98b704b64a4903cab36792f506"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_element.py",
+      "destination": "bindings/python/opentlv/tests/test_element.py",
+      "sha256": "c7b70ebf54ba0ff0b35f4e6374fcb32cdc4356260a87382865bde153e1e9fc37"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_emv_format.py",
+      "destination": "bindings/python/opentlv/tests/test_emv_format.py",
+      "sha256": "c4d5e92bc0e2c66e46392b3b335c3bafc002aea5db26d628ca542790f3133ae6"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_error.py",
+      "destination": "bindings/python/opentlv/tests/test_error.py",
+      "sha256": "58967064fb39e8a1a353a50d181315f95ad83991ac04193818705ef06f0cd49d"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_fixed_format.py",
+      "destination": "bindings/python/opentlv/tests/test_fixed_format.py",
+      "sha256": "9cefbde5804b7484d8afc8dbde6d503ede155b3582272221282dd6ec3ce190f6"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_format.py",
+      "destination": "bindings/python/opentlv/tests/test_format.py",
+      "sha256": "5fe9be179d2ca27a63c49d9cd99eab6a266ecec09b4287b25f514c3da619d903"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_lldp.py",
+      "destination": "bindings/python/opentlv/tests/test_lldp.py",
+      "sha256": "6d0384d11fdbfca294daee2cb7ac34490789614d0b3298bc41dee3e8af8632b9"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_locations.py",
+      "destination": "bindings/python/opentlv/tests/test_locations.py",
+      "sha256": "a1170f9b1d49dae476610d8063ae77206516a9458b99006ac8248b90fe929713"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_nfc_type2.py",
+      "destination": "bindings/python/opentlv/tests/test_nfc_type2.py",
+      "sha256": "4d9767e11522d30dd8503112ca4eb726a9ab8a6c89ee3de0ff3564d732277d4a"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_program.py",
+      "destination": "bindings/python/opentlv/tests/test_program.py",
+      "sha256": "ed661f71d657fb5f6b5ca2c6deaca2c1c1947db9d9898f3abc01d7f1242df9af"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_reader.py",
+      "destination": "bindings/python/opentlv/tests/test_reader.py",
+      "sha256": "6f6f79e3bbcc8c5faa500b3af7bb3d15896dc9c1488ef843ad3f48887b9be3ce"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_schema.py",
+      "destination": "bindings/python/opentlv/tests/test_schema.py",
+      "sha256": "c80fba66be13898b5bf99f6d76340fce952c951e76566bbbe874f09b0631e8d4"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_tag.py",
+      "destination": "bindings/python/opentlv/tests/test_tag.py",
+      "sha256": "35959e38b11e0475d5f8db0d1b7c00e2628bf782c4a63ef9cfdb8fb82f4a8e14"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_tree_reader.py",
+      "destination": "bindings/python/opentlv/tests/test_tree_reader.py",
+      "sha256": "51995b08c612076e4e6ad1a1b5234eb3670ea0db0e026b3f7af8a8715b347f1f"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_tree_writer.py",
+      "destination": "bindings/python/opentlv/tests/test_tree_writer.py",
+      "sha256": "46305478e44a619195bbe484c248221e94e191169f2894c666f020c316efb971"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_version.py",
+      "destination": "bindings/python/opentlv/tests/test_version.py",
+      "sha256": "e7dfdcb35603fa7b2d282077a4e6b1d2d833cd9e915cd0ddc8a9bc736c528243"
+    },
+    {
+      "source": "bindings/python/opentlv/tests/test_writer.py",
+      "destination": "bindings/python/opentlv/tests/test_writer.py",
+      "sha256": "ce07757a50e41063b813e671d6930655618143002321a5b5f0e564c200651976"
+    },
+    {
+      "source": "docs/development/python.md",
+      "destination": "docs/development/python.md",
+      "sha256": "ac5138ce0b663603c2a059cc4c75afa8af06626a68680925a50c6ce062dde45b"
+    },
+    {
+      "source": "docs/guides/python.md",
+      "destination": "docs/guides/python.md",
+      "sha256": "ed6004d6e41dcee81e74c671112f4e2183c54b59c39bb5bd3b3a7cf0e4a6ddbc"
+    },
+    {
+      "source": "tests/query/python_facade.py",
+      "destination": "tests/query/python_facade.py",
+      "sha256": "c382951b9887571beea20767965265146978c959699d0e16715326406f9f38f0"
+    }
+  ]
+}
