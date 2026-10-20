@@ -22,11 +22,12 @@ print(_opentlv.version_string())
 Not meant to be used directly; use the `opentlv` package instead. See
 [Python bindings](https://marekcingel.github.io/OpenTLV/development/python/).
 
-Built-in format providers live in `src/formats/` and are selected by their
-CMake component options. `src/format.c` maps stable Python format IDs to the
-enabled providers and registers availability flags. `module.c` uses that
-shared lookup without including protocol format headers. Fixed-format
-operations remain always available. Document remains a required component.
+Built-in format providers live in `src/formats/`. The standalone Python package
+requires full Core functionality and compiles every existing provider.
+`src/format.c` retains stable Python format IDs and availability flags;
+fixed-format operations remain available.
 
-For reduced builds, run `pytest bindings/python/opentlv/tests/test_components.py`
-with the rebuilt native extension and Python package on `PYTHONPATH`.
+Build `opentlv-core` from the repository root with `python -m pip install .`.
+The root `pyproject.toml` owns native packaging. See the
+[standalone build guide](../../../docs/development/python.md) for Core selection,
+attestation and validation. Reduced-feature packages are not supported.

@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "scope": "Local issue #2 implementation; hosted and real release attestation not validated",
+  "base_commit": "f63f29cb935ac26946c712ecd7569a8627064fdf",
+  "branch": "feature/2_standalone_verified_core",
+  "core_lock": {
+    "schema": 1,
+    "repository": "OpenTLV/opentlv",
+    "version": "0.7.1",
+    "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+    "release_tag": null,
+    "allow_verified_source": true
+  },
+  "selections": {
+    "windows_local": {
+      "mode": "local-source",
+      "verified": false,
+      "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+      "version": "0.7.1",
+      "dirty": false,
+      "source_dir": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+      "source_path": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv",
+      "repository": "OpenTLV/opentlv",
+      "locked_commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f"
+    },
+    "windows_pinned": {
+      "mode": "pinned-git",
+      "verified": false,
+      "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+      "version": "0.7.1",
+      "dirty": false,
+      "source_dir": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue2-sdist\\core-dependency\\source",
+      "source_path": "D:\\Projects\\marekcingel\\OpenTLV\\opentlv-python\\build\\issue2-sdist\\core-dependency\\source",
+      "repository": "OpenTLV/opentlv"
+    },
+    "linux_local": {
+      "mode": "local-source",
+      "verified": false,
+      "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+      "version": "0.7.1",
+      "dirty": true,
+      "source_dir": "/mnt/d/Projects/marekcingel/OpenTLV/opentlv",
+      "source_path": "/mnt/d/Projects/marekcingel/OpenTLV/opentlv",
+      "repository": "OpenTLV/opentlv",
+      "locked_commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f"
+    }
+  },
+  "checks": {
+    "windows": {
+      "python": "3.11.4",
+      "compiler": "MSVC 19.44.35222.0",
+      "cmake": "3.31.7",
+      "pytest": 299,
+      "examples": 8,
+      "query_fixtures": 171,
+      "query_checks": 664,
+      "dependency_tests": 52,
+      "all_17_off_inputs_forced_on": true,
+      "sdist_build": "passed"
+    },
+    "linux": {
+      "python": "3.12.3",
+      "compiler": "GCC 13.3.0",
+      "cmake": "3.28.3",
+      "pytest": 299,
+      "examples": 8,
+      "query_fixtures": 171,
+      "query_checks": 664,
+      "dependency_tests": 52,
+      "pic": true
+    },
+    "migration": {
+      "files": 77,
+      "import_commit": "e0e2ce1014bfa57a86d796a2e5c5b8935cfad49a"
+    },
+    "negative_configurations": [
+      "CI local override rejected",
+      "required release with null lock rejected"
+    ]
+  },
+  "logs": {
+    "build/issue2-local-build.log": {
+      "sha256": "bf0a82e4259f11978c01ac6f924d17792e8b05acf70e18817970531eb031d093"
+    },
+    "build/issue2-local-tests.log": {
+      "sha256": "6835fc276acd3de312988fdbfd676e8925c8683d18c35c3187157869d3a5c9ec"
+    },
+    "build/issue2-final-local-build.log": {
+      "sha256": "b53d50af8841fb002e8d9008c9b20f0cd342dffaa13db53e1a4540177a5141c4"
+    },
+    "build/issue2-sdist-build.log": {
+      "sha256": "803a4c49b0acfdac0382ba15f2b43f1c3fafdfc3e301591cb1589746e24e76bf"
+    },
+    "build/issue2-sdist-tests.log": {
+      "sha256": "0624550f5171fc0ce7137e86eefc8c66910e99e7ab62a5008b5515e753dff5ca"
+    },
+    "build/issue2-final-pinned-build.log": {
+      "sha256": "c28bacfdcb0ee9c2f959798d2318ec7e67145fa1b517ccd5db69282d7741afa6"
+    },
+    "build/issue2-final-pinned-tests.log": {
+      "sha256": "d97629a71051027a917f352e5ac0d19b4106414e82fe1d3c11b905a52c985201"
+    },
+    "build/issue2-linux-build.log": {
+      "sha256": "729ede8220f9924b7ec1745dfcc3ca53cb099fd1dbf5fbee31ad1ae1ba8a9ff7"
+    },
+    "build/issue2-linux-tests.log": {
+      "sha256": "ae2fe2cbd768d5f12e10c41b3033e67095da969c7bf4f86e005a29d52f5994b1"
+    },
+    "build/issue2-build-tests.log": {
+      "sha256": "a54af11d6c00340f40dfd9fce98feb65c7854b2f130f1d5cdd57deae9a0285fb"
+    },
+    "build/issue2-linux-build-tests.log": {
+      "sha256": "4f34b87fd17550f998144c94f3bca3e35044d25ac44f96695eb35f59d0160b63"
+    },
+    "build/issue2-reject-ci.log": {
+      "sha256": "f873f12c87139dd5577f2287aa266a5bc5255892c4eb0148c57dd0b0596bd1ca"
+    },
+    "build/issue2-reject-release.log": {
+      "sha256": "3c7e02b9c684c2ac4ae6bd6768a2dfe4296a99f5abf0e9a285e6d7a4209b7930"
+    }
+  },
+  "wheels": {
+    "build/issue2-final-local-wheels/opentlv_core-0.1.0-cp311-abi3-win_amd64.whl": {
+      "sha256": "f9cce80359a739068568d0136de58a38d4431b9c0d5a4cffeec7dd9e3d92a3f1"
+    },
+    "build/issue2-sdist-wheels/opentlv_core-0.1.0-cp311-abi3-win_amd64.whl": {
+      "sha256": "ca8d5c4192eb47e73edaced925d0495729fb85e78fd7ab51d68b7efef61fa105"
+    },
+    "build/issue2-final-pinned-wheels/opentlv_core-0.1.0-cp311-abi3-win_amd64.whl": {
+      "sha256": "aa5322478d8a3b461dc0bbe512bcf61438c253d65b3d2ad97c1019c66afa5eb1"
+    },
+    "build/issue2-linux-wheels/opentlv_core-0.1.0-cp311-abi3-linux_x86_64.whl": {
+      "sha256": "73211b521c01842a17e0c049ea4d7621973c71a6259c206587dd7d37113d640f"
+    }
+  },
+  "not_run": [
+    "macOS",
+    "hosted CI",
+    "real published Core artifact attestation",
+    "publication"
+  ]
+}

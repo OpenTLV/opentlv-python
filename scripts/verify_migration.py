@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 
 
@@ -22,7 +23,7 @@ EXTRA_FILES = {
 }
 
 
-def verify(core):
+def verify(core, import_ref=None):
     manifest = json.loads(
         (ROOT / "docs/migration/source-inventory.json").read_text(encoding="utf-8")
     )
@@ -47,13 +48,18 @@ def verify(core):
         original = subprocess.check_output(
             ["git", "-C", str(core), "show", f"{SOURCE_COMMIT}:{entry['source']}"]
         )
-        imported = (ROOT / entry["destination"]).read_bytes()
+        imported = subprocess.check_output(
+            ["git", "-C", str(ROOT), "show", f"{import_ref}:{entry['destination']}"]
+        ) if import_ref else (ROOT / entry["destination"]).read_bytes()
         if hashlib.sha256(original).hexdigest() != entry["sha256"]:
             raise ValueError(f"Incorrect source hash: {entry['source']}")
         if imported != original:
             raise ValueError(f"Modified imported file: {entry['destination']}")
     # Ignore only disposable interpreter/test cache files.
-    imported_paths = {
+    imported_paths = set(subprocess.check_output(
+        ["git", "-C", str(ROOT), "ls-tree", "-r", "--name-only", import_ref,
+         "--", "bindings/python"], text=True
+    ).splitlines()) if import_ref else {
         path.relative_to(ROOT).as_posix()
         for path in (ROOT / "bindings/python").rglob("*")
         if path.is_file()
@@ -70,8 +76,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core", type=Path, default=ROOT.parent / "opentlv",
                         help="Core Git checkout containing the recorded commit")
+    parser.add_argument("--import-ref",
+                        help="Verify a historical import commit instead of the working tree")
     args = parser.parse_args()
     try:
-        verify(args.core)
+        if args.import_ref and not re.fullmatch("[0-9a-f]{40}", args.import_ref):
+            raise ValueError("--import-ref must be a full immutable commit SHA")
+        verify(args.core, args.import_ref)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Migration verification failed: {error}\n")

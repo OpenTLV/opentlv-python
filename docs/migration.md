@@ -1,5 +1,16 @@
 # Python source migration
 
+This document records the historical #1 baseline. Standalone integration in
+#2 subsequently changed build metadata and guides, while preserving the native
+and Python implementation, existing tests, examples and frozen inventory.
+Use the [current build guide](development/python.md) for installation.
+To verify the original import without requiring today's working tree to match it:
+
+```sh
+python -B scripts/verify_migration.py --core ../opentlv \
+  --import-ref e0e2ce1014bfa57a86d796a2e5c5b8935cfad49a
+```
+
 ## Provenance
 
 | Field | Value |
