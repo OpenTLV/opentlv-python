@@ -57,10 +57,10 @@ def main():
         return
     pytest_args = [] if args.junit is None else ["--junitxml=" + str(args.junit.resolve())]
     run(sys.executable, "-B", "-m", "pytest", "-p", "no:cacheprovider", "-q",
-        *pytest_args, ROOT / "bindings/python/opentlv/tests")
+        *pytest_args, ROOT / "tests/python")
     if args.junit:
         result["tests"] = junit_counts(args.junit)
-    examples = sorted((ROOT / "bindings/python/opentlv/examples").glob("*.py"))
+    examples = sorted((ROOT / "examples").glob("*.py"))
     for example in examples:
         run(sys.executable, "-B", example)
     result["examples"] = len(examples)

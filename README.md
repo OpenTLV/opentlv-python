@@ -11,11 +11,11 @@ backend can supply CMake). Use a virtual environment:
 ```sh
 python -m venv .venv
 # Activate the virtual environment for your shell.
-python -m pip install . ./bindings/python/opentlv
+python -m pip install . ./src
 ```
 
 The repository root builds the native `opentlv-core` distribution (`_opentlv`
-import). `bindings/python/opentlv` builds the public `opentlv` package.
+import). `src` builds the public `opentlv` package.
 Both package versions are `0.1.0`; `opentlv.__version__` and
 `_opentlv.version_string()` report this Python binding version. The public
 package requires exactly the matching native package version. Python releases
@@ -32,7 +32,7 @@ For local Core development, use an explicit absolute checkout path:
 ```sh
 python -m pip install . \
   --config-settings=cmake.define.OPENTLV_PYTHON_CORE_SOURCE=/absolute/path/to/opentlv
-python -m pip install ./bindings/python/opentlv
+python -m pip install ./src
 ```
 
 On Windows use a path such as `D:/Projects/OpenTLV/opentlv`.
@@ -69,9 +69,11 @@ See [build and verification details](docs/development/python.md).
 | Path | Content |
 | --- | --- |
 | `pyproject.toml`, `CMakeLists.txt`, `cmake/` | Standalone native build and Core policy |
-| `bindings/python/opentlv-core/src/` | Existing native extension implementation |
-| `bindings/python/opentlv/` | Public package, 22 pytest modules and eight examples |
-| `bindings/common/` | Two binding-owned native adapters |
+| `native/src/` | Existing native extension implementation |
+| `src/pyproject.toml`, `src/opentlv/` | Public `opentlv` distribution metadata and package sources |
+| `tests/python/` | Existing Python API tests |
+| `examples/` | Eight runnable examples, outside the installed package |
+| `native/common/` | Two binding-owned native adapters |
 | `scripts/check_python.py` | Installed-wheel, pytest, example and Query validation |
 | `tests/build/` | Dependency verification and public Core target tests |
 | `tests/ci/`, `.github/workflows/` | PR/Main/Full gates and evidence regressions |
@@ -85,6 +87,13 @@ See the [user guide](docs/guides/python.md) and
 
 The initial migration remains reproducible at its historical import commit.
 Its frozen inventory is not rewritten to conceal subsequent build changes.
+
+The two build entry points preserve the existing distribution identities:
+`python -m pip install . ./src` installs both packages. The facade's metadata
+lives beside `src/opentlv` so its sdist is self-contained; the root native
+sdist contains the CMake inputs, dependency resolver and `native/common` adapters.
+Development tooling remains in `scripts/`. See [contributing](CONTRIBUTING.md)
+and the [layout validation record](docs/validation/layout.md).
 
 ## Continuous integration
 

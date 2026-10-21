@@ -15,7 +15,7 @@
 #endif
 #include <stdlib.h>
 #include <string.h>
-#include "../../../common/query_schema.h"
+#include "../common/query_schema.h"
 
 #define PROGRAM_NAME "opentlv.query_program"
 #define EXECUTION_NAME "opentlv.query_execution"

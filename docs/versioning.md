@@ -6,7 +6,7 @@ The facade requires `opentlv-core==0.1.0`; mixing different binding releases is
 unsupported. Python remains `>=3.11` and the native wheel retains `cp311-abi3`.
 
 `cmake/python-package.json` is the version and compatibility policy. Keep the
-version in both `pyproject.toml` files and the facade's exact dependency in sync
+version in `pyproject.toml` and `src/pyproject.toml`, and the facade's exact dependency, in sync
 with it. CMake configuration and source CI reject disagreement. Artifact checks
 also validate the built wheel/sdist metadata, and installed-package checks
 compare both distribution versions and the runtime version string.

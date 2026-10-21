@@ -16,4 +16,7 @@ Homepage = "https://github.com/OpenTLV/opentlv-python"
 Issues = "https://github.com/OpenTLV/opentlv-python/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/opentlv"]
+packages = ["opentlv"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/opentlv", "/pyproject.toml", "/README.md"]

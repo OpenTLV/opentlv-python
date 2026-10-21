@@ -12,11 +12,11 @@ endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/python-package.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml"
-    "${CMAKE_CURRENT_SOURCE_DIR}/bindings/python/opentlv/pyproject.toml")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pyproject.toml")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/cmake/python-package.json" _python_package)
 string(JSON OPENTLV_PYTHON_VERSION GET "${_python_package}" version)
 configure_file(cmake/python-version.h.in generated/opentlv_python_version.h @ONLY)
 include(cmake/Core.cmake)
-add_subdirectory(bindings/python/opentlv-core)
+add_subdirectory(native)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/core-selection.json"
     DESTINATION . RENAME _opentlv_core_dependency.json COMPONENT Python)

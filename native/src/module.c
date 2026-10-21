@@ -31,7 +31,7 @@
 #include <tlv/schema/schema.h>
 #include "opentlv_python_version.h"
 #include <tlv/writer/writer.h>
-#include "../../../common/path_query.h"
+#include "../common/path_query.h"
 
 static PyObject* opentlv_python_error = NULL;
 

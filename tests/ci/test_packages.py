@@ -45,13 +45,16 @@ def artifacts(work, record):
                 archive.writestr("_opentlv.abi3.so", b"fixture")
                 archive.writestr("_opentlv_core_dependency.json", json.dumps(record["core"]))
             else:
-                archive.writestr("opentlv/__init__.py", "# fixture\n")
+                for source in (ROOT / "src/opentlv").glob("*.py"):
+                    archive.writestr("opentlv/" + source.name, source.read_bytes())
         record["wheels"][name] = digest(path)
         if record["tier"] == "full":
             path = work / "sdists" / (prefix + ".tar.gz")
             path.parent.mkdir(parents=True, exist_ok=True)
             project = packages.PROJECTS[packages.DISTRIBUTIONS.index(name)]
             contents = {"PKG-INFO": metadata(name, value), "pyproject.toml": (ROOT / project).read_bytes()}
+            for relative in packages.sdist_inputs(name):
+                contents[relative] = (ROOT / Path(project).parent / relative).read_bytes()
             if native:
                 for relative in ("cmake/python-package.json", "cmake/core-artifact.json",
                                  "docs/migration/source-inventory.json"):
@@ -70,6 +73,48 @@ def test_distribution_roundtrip(tmp_path, tier):
     artifacts(tmp_path, record)
     packages.validate_bundle(tmp_path, record, packages.policy())
     assert len(record["artifacts"]) == (4 if tier == "full" else 2)
+
+
+@pytest.mark.parametrize("name", packages.DISTRIBUTIONS)
+@pytest.mark.parametrize("mutation", ["missing-source", "obsolete-layout"])
+def test_sdist_rejects_incomplete_or_obsolete_layout(tmp_path, name, mutation):
+    record = records("full")[0]
+    artifacts(tmp_path, record)
+    path = tmp_path / "sdists" / (name.replace("-", "_") + "-0.1.0.tar.gz")
+    with tarfile.open(path) as archive:
+        contents = {member.name: archive.extractfile(member).read()
+                    for member in archive.getmembers() if member.isfile()}
+    prefix = name.replace("-", "_") + "-0.1.0/"
+    if mutation == "missing-source":
+        del contents[prefix + ("native/common/path_query.h" if name == "opentlv-core"
+                               else "opentlv/reader.py")]
+    else:
+        contents[prefix + "bindings/obsolete.py"] = b"# stale source\n"
+    with tarfile.open(path, "w:gz") as archive:
+        for relative, content in contents.items():
+            entry = tarfile.TarInfo(relative)
+            entry.size = len(content)
+            archive.addfile(entry, io.BytesIO(content))
+    with pytest.raises(ValueError, match="build inputs|obsolete bindings"):
+        packages.check_sdist(path, name, packages.policy())
+
+
+@pytest.mark.parametrize("mutation", ["missing-source", "test-payload"])
+def test_public_wheel_rejects_incomplete_or_test_payload(tmp_path, mutation):
+    record = records()[0]
+    artifacts(tmp_path, record)
+    path = next((tmp_path / "wheels").glob("opentlv-*.whl"))
+    with zipfile.ZipFile(path) as archive:
+        contents = {name: archive.read(name) for name in archive.namelist()}
+    if mutation == "missing-source":
+        del contents["opentlv/reader.py"]
+    else:
+        contents["opentlv/tests/test_reader.py"] = b"# test\n"
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in contents.items():
+            archive.writestr(name, content)
+    with pytest.raises(ValueError, match="source inventory"):
+        packages.check_wheel(path, "opentlv", packages.policy(), record["core"])
 
 
 @pytest.mark.parametrize("before,after", [
