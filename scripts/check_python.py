@@ -3,6 +3,7 @@
 """Run the existing Python suite, full-feature check, examples and selected Core corpus."""
 
 import argparse
+from importlib.metadata import version
 import json
 from pathlib import Path
 import re
@@ -16,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_support import ROOT, read, require, run, write
 from core_dependency import git_identity
 from ci_contract import junit_counts
+from package_contract import DISTRIBUTIONS, policy
 
 
 def main():
@@ -28,11 +30,16 @@ def main():
     if args.output:
         args.output.unlink(missing_ok=True)
     selected = read(args.selection)
+    package = policy()
+    versions = {name: version(name) for name in DISTRIBUTIONS}
+    require(versions == dict.fromkeys(DISTRIBUTIONS, package["version"]),
+            "Installed distribution version differs from package policy")
     import _opentlv
     import opentlv
     installed = read(Path(_opentlv.__file__).with_name("_opentlv_core_dependency.json"))
     require(installed == selected, "Installed wheel differs from selected build evidence")
-    require(opentlv.__version__ == selected["version"], "Loaded Core version differs from selection")
+    require(opentlv.__version__ == _opentlv.version_string() == package["version"],
+            "Loaded Python binding version differs from distribution metadata")
     for name in ("BER", "CER", "DER", "EMV", "NFC", "LLDP"):
         require(getattr(_opentlv, "HAS_" + name), "Official wheel is missing " + name)
     print(json.dumps({"extension": _opentlv.__file__, "package": opentlv.__file__,
@@ -43,7 +50,7 @@ def main():
                 "Module was not imported from the validation environment")
     items = list(opentlv.Reader(bytes.fromhex("02012a")))
     require(len(items) == 1 and bytes(items[0].value) == b"\x2a", "Public Reader smoke failed")
-    result = {"smoke": True}
+    result = {"smoke": True, "package_versions": versions}
     if args.smoke:
         if args.output:
             write(args.output, result)

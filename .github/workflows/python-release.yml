@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Marek Cingel
+name: Python release preparation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: python-release-preparation
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -B scripts/release.py preflight
+  full:
+    needs: preflight
+    permissions:
+      contents: read
+      attestations: read
+      actions: read
+      security-events: write
+    uses: ./.github/workflows/python-full.yml
+    with:
+      require_verified_core: true
+  assemble:
+    needs: [preflight, full]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-quality-full-${{ github.run_attempt }}
+          path: build/quality
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-build-full-*-${{ github.run_attempt }}
+          path: build/evidence
+      - run: >-
+          python -B scripts/release.py assemble --evidence build/evidence
+          --quality build/quality/quality.json --output build/release
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: build/release/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-release-candidate-${{ github.run_attempt }}
+          path: build/release/*
+          if-no-files-found: error

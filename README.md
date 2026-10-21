@@ -16,8 +16,10 @@ python -m pip install . ./bindings/python/opentlv
 
 The repository root builds the native `opentlv-core` distribution (`_opentlv`
 import). `bindings/python/opentlv` builds the public `opentlv` package.
-Both package versions remain `0.1.0`; `opentlv.__version__` reports the linked
-Core version. No package publication is part of this integration.
+Both package versions are `0.1.0`; `opentlv.__version__` and
+`_opentlv.version_string()` report this Python binding version. The public
+package requires exactly the matching native package version. Python releases
+are independent of Core. See [versioning](docs/versioning.md).
 
 The default build obtains the exact Core commit and version in
 [`cmake/core-artifact.json`](cmake/core-artifact.json). It needs no sibling
@@ -97,3 +99,9 @@ dependency is explicitly unattested; release callers must enable
 `require_verified_core`, which rejects the current null release lock.
 See [quality gates and local commands](docs/quality-gates.md) and
 [local validation](docs/validation/ci.md).
+
+CI retains the tested wheels and source distributions alongside their checksums
+and build records. The manual [release preparation](docs/releases.md) runs
+verified-Core Full CI and assembles an attested candidate with a manifest and
+`SHA256SUMS`. The current null Core release lock deliberately blocks that path.
+PyPI publication, GitHub Releases and remote tag creation are not enabled.

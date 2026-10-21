@@ -3,12 +3,15 @@
 """Shared matrix and fail-closed evidence checks for Python's CI entry points."""
 
 import os
+import hashlib
+import json
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
 
 from build_support import ROOT, digest, read, require, run
 from verified_core import lock
+from package_contract import policy as package_policy, validate_artifact_record
 
 REPOSITORY = "OpenTLV/opentlv-python"
 TIERS = ("pr", "main", "full")
@@ -30,7 +33,7 @@ def definition_hashes():
     for directory in ("scripts", "cmake", "bindings", "tests", ".github/workflows"):
         paths.extend(path for path in (ROOT / directory).rglob("*")
                      if path.is_file() and "__pycache__" not in path.parts
-                     and (path.suffix in (".py", ".c", ".h", ".json", ".cmake", ".toml", ".yml")
+                     and (path.suffix in (".py", ".c", ".h", ".in", ".json", ".cmake", ".toml", ".yml")
                           or path.name == "CMakeLists.txt"))
     return {path.relative_to(ROOT).as_posix(): digest(path) for path in sorted(set(paths))}
 
@@ -114,6 +117,7 @@ def validate_records(records, tier, expected_identity, definitions, checks, requ
         require(set(record.get("wheels", {})) == {"opentlv", "opentlv-core"}
                 and all(re.fullmatch(r"[0-9a-f]{64}", value)
                         for value in record["wheels"].values()), "Missing wheel digests")
+        validate_artifact_record(record, package_policy())
         if tier != "main":
             tests = record.get("tests", {})
             require(tests.get("tests") == policy["pytest_cases"]
@@ -127,4 +131,7 @@ def validate_records(records, tier, expected_identity, definitions, checks, requ
                 "Packaging validation differs")
     return {"schema": 1, "tier": tier, "identity": expected_identity,
             "definitions": definitions, "require_release": require_release,
+            "records": {record["configuration"]["id"]:
+                        hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+                        for record in records},
             "checks": checks, "configurations": sorted(seen), "status": "success"}

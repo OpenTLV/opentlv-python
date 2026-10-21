@@ -123,7 +123,7 @@ python -B -m pytest -p no:cacheprovider -q tests/build
 python -B scripts/check_python.py --selection build/native/core-selection.json
 ```
 
-`check_python.py` checks installed build evidence, linked Core version and all
+`check_python.py` checks installed build evidence, Python binding version and all
 existing format flags, runs the original pytest suite and eight examples, then
 runs the unchanged Query facade against the selected Core corpus/reference.
 The corpus is staged in a temporary directory; Core-owned test files are not
@@ -139,9 +139,12 @@ checks, source selections and limitations.
 
 ## Versioning and ownership
 
-Both Python distribution versions remain `0.1.0`.
-`opentlv.__version__` continues to report the linked Core version, currently
-`0.7.1` for the locked dependency. No Python API or version semantic is changed.
+Both Python distribution versions are `0.1.0`. `opentlv.__version__` and
+`_opentlv.version_string()` report that Python binding version, generated from
+`cmake/python-package.json` during configuration. Core remains `0.7.1` in the
+dependency lock and installed dependency metadata; it no longer supplies the
+public Python version string. See [versioning](../versioning.md) and
+[release preparation](../releases.md).
 
 Python owns its extension, facade, tests, examples and two native adapters.
 Core owns shared Query semantics and the diagnostic vocabulary generator.

@@ -76,6 +76,8 @@ jobs:
             build/record.json
             build/ci.log
             build/ci/pytest.xml
+            build/ci/wheels/*
+            build/ci/sdists/*
           if-no-files-found: error
   quality:
     if: inputs.tier != 'main'

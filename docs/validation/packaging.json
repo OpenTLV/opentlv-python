@@ -1,0 +1,118 @@
+{
+  "schema": 1,
+  "date": "2026-10-21",
+  "hosted": false,
+  "base_commit": "c459b19002aafaee72df65c48dbd13f6eea57f1f",
+  "dirty": true,
+  "package_policy": {
+    "schema": 1,
+    "version": "0.1.0",
+    "requires_python": ">=3.11",
+    "compatible_core_versions": [
+      "0.7.1"
+    ],
+    "migration": {
+      "repository": "https://github.com/OpenTLV/opentlv",
+      "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+      "inventory_sha256": "5e225cf5579b347dae0a7fa01591905833043ba40467afde61df8a95cde7516b"
+    }
+  },
+  "core": {
+    "repository": "OpenTLV/opentlv",
+    "version": "0.7.1",
+    "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+    "mode": "pinned-git",
+    "verified": false
+  },
+  "definitions_match_windows_record": true,
+  "windows": {
+    "runtime": {
+      "python": "3.11.4",
+      "system": "Windows",
+      "machine": "AMD64"
+    },
+    "packaging": "sdist-wheel",
+    "artifacts": {
+      "wheels/opentlv-0.1.0-py3-none-any.whl": "a53ae970c516153def75fffaae30d8cd90f0fc13f9d936fa83f0a81f4ca21892",
+      "wheels/opentlv_core-0.1.0-cp311-abi3-win_amd64.whl": "4921fef8805f4de6b5463d2de2e0fa17a3926b49b2afa1ce043b6f4c394765a4",
+      "sdists/opentlv_core-0.1.0.tar.gz": "107bec6cbc91fcc38e699e1b7bfffd156cb4d8941a66057fff9caec45b7a1792",
+      "sdists/opentlv-0.1.0.tar.gz": "2189c3e7ff4ede2fff1831693f0fea7d0b90b53d91df2efdc5cffabd959b6cc4"
+    },
+    "tests": {
+      "tests": 299,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "examples": 8,
+    "query": {
+      "fixtures": 171,
+      "checks": 664
+    },
+    "package_versions": {
+      "opentlv-core": "0.1.0",
+      "opentlv": "0.1.0"
+    },
+    "infrastructure_tests": 162,
+    "no_index_dependency_resolution": true
+  },
+  "linux": {
+    "python": "3.12.3",
+    "environment": "WSL",
+    "kind": "local-sdist-rebuild",
+    "source_sdists": "build/issue4-windows/sdists",
+    "artifacts": {
+      "wheels/opentlv-0.1.0-py3-none-any.whl": "a1b0f468ae8c4e8120caaf4d30edb5439483de10a12cc8664b3d7a264d42b679",
+      "wheels/opentlv_core-0.1.0-cp311-abi3-linux_x86_64.whl": "502f3a84e681460af1528bc26cf8ae3884a1c7ad7ebd5d63de3140e730737ad4",
+      "sdists/opentlv_core-0.1.0.tar.gz": "107bec6cbc91fcc38e699e1b7bfffd156cb4d8941a66057fff9caec45b7a1792",
+      "sdists/opentlv-0.1.0.tar.gz": "2189c3e7ff4ede2fff1831693f0fea7d0b90b53d91df2efdc5cffabd959b6cc4"
+    },
+    "validation": {
+      "smoke": true,
+      "package_versions": {
+        "opentlv-core": "0.1.0",
+        "opentlv": "0.1.0"
+      },
+      "tests": {
+        "tests": 299,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "examples": 8,
+      "query": {
+        "fixtures": 171,
+        "checks": 664
+      }
+    },
+    "infrastructure_tests": 162,
+    "no_index_dependency_resolution": true
+  },
+  "quality": {
+    "clang_format": "23.1.1",
+    "clang_tidy": "18",
+    "cppcheck": "2.13.0",
+    "actionlint": "1.7.7",
+    "native_translation_units": 12,
+    "release_preflight_null_lock": "rejected as required"
+  },
+  "local_evidence_sha256": {
+    "build/issue4-windows.json": "44193189c010984cad530095225518364352ea4314eff535b45e313d5d23327b",
+    "build/issue4-windows.log": "2804fb536c2a1399e589edae84254028003f7ff23bd479423a642ccd59efe972",
+    "build/issue4-linux-from-sdist/validation.json": "4b8b04cc7f902f1c2d8feddeb0f70cc702e4a0fdfb96b5b05f1363c241e7f42d",
+    "build/issue4-linux-from-sdist.log": "d5350608d9137bf4a87d2b768efe0666c78d72598b130846cbf18c98e7fae373",
+    "build/issue4-linux-tests.log": "c3d310c43a8f6ecfc68eee0fb3c08a109891a8887be045ef55e915c1f853b022",
+    "build/issue4-quality.log": "b46d15d78b920bf0809428ce6375c3622643c709cc48af1e6edb96bd16e6e0f4",
+    "build/issue4-clang-tidy.log": "7b1fca223c13ac72ef437c9918f5eedcbed26c920cff6d79c8ac2c94d0a333f2",
+    "build/issue4-cppcheck.log": "859bfb37249d023d9bcc09216be43ee771e0cfa93eb2af22b8f113f36268c83a",
+    "build/issue4-release-rejection.log": "5601cff416df091a8a34a355daaaa67fd1fc1e1287b0c11efef5ba4bd5906508"
+  },
+  "limitations": [
+    "Hosted Full matrix and artifact gate not run on this revision",
+    "macOS and other CPython versions not run locally",
+    "Positive release assembly uses synthetic fixtures",
+    "Real verified Core release and GitHub OIDC candidate attestation not exercised",
+    "Linux full-run attempts stopped during sdist creation; only the sdist rebuild completed",
+    "PyPI publication disabled; portable wheel coverage not established"
+  ]
+}

@@ -1,0 +1,221 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Marek Cingel
+"""Exercise distribution metadata, actual artifact bytes and release assembly failures."""
+
+import copy
+import io
+import json
+from pathlib import Path
+import shutil
+import sys
+import tarfile
+import zipfile
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from build_support import ROOT, digest, read, write
+import ci_contract
+import package_contract as packages
+import release
+from test_gate import CHECKS, IDENTITY, records
+
+
+def metadata(name, value):
+    result = (f'Metadata-Version: 2.1\nName: {name}\nVersion: {value["version"]}\n'
+              f'Requires-Python: {value["requires_python"]}\n')
+    if name == "opentlv":
+        result += f'Requires-Dist: opentlv-core=={value["version"]}\n'
+    return result.encode()
+
+
+def artifacts(work, record):
+    value = packages.policy()
+    for name in packages.DISTRIBUTIONS:
+        prefix = name.replace("-", "_") + "-" + value["version"]
+        native = name == "opentlv-core"
+        tag = "cp311-abi3-linux_x86_64" if native else "py3-none-any"
+        path = work / "wheels" / (prefix + "-" + tag + ".whl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as archive:
+            info = prefix + ".dist-info/"
+            archive.writestr(info + "METADATA", metadata(name, value))
+            archive.writestr(info + "WHEEL", f'Wheel-Version: 1.0\nTag: {tag}\nRoot-Is-Purelib: {str(not native).lower()}\n')
+            if native:
+                archive.writestr("_opentlv.abi3.so", b"fixture")
+                archive.writestr("_opentlv_core_dependency.json", json.dumps(record["core"]))
+            else:
+                archive.writestr("opentlv/__init__.py", "# fixture\n")
+        record["wheels"][name] = digest(path)
+        if record["tier"] == "full":
+            path = work / "sdists" / (prefix + ".tar.gz")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            project = packages.PROJECTS[packages.DISTRIBUTIONS.index(name)]
+            contents = {"PKG-INFO": metadata(name, value), "pyproject.toml": (ROOT / project).read_bytes()}
+            if native:
+                for relative in ("cmake/python-package.json", "cmake/core-artifact.json",
+                                 "docs/migration/source-inventory.json"):
+                    contents[relative] = (ROOT / relative).read_bytes()
+            with tarfile.open(path, "w:gz") as archive:
+                for relative, content in contents.items():
+                    entry = tarfile.TarInfo(prefix + "/" + relative)
+                    entry.size = len(content)
+                    archive.addfile(entry, io.BytesIO(content))
+    record["artifacts"] = packages.inspect_artifacts(work, record["tier"], record["core"], value)
+
+
+@pytest.mark.parametrize("tier", ["pr", "main", "full"])
+def test_distribution_roundtrip(tmp_path, tier):
+    record = records(tier)[0]
+    artifacts(tmp_path, record)
+    packages.validate_bundle(tmp_path, record, packages.policy())
+    assert len(record["artifacts"]) == (4 if tier == "full" else 2)
+
+
+@pytest.mark.parametrize("before,after", [
+    (b"Version: 0.1.0", b"Version: 0.7.1"),
+    (b"Name: opentlv", b"Name: other"),
+    (b"Requires-Python: >=3.11", b"Requires-Python: >=3.12"),
+    (b"opentlv-core==0.1.0", b"opentlv-core"),
+    (b"opentlv-core==0.1.0", b"opentlv-core>=0.1.0"),
+    (b"opentlv-core==0.1.0", b"opentlv-core==0.7.1"),
+])
+def test_metadata_rejects_incompatible_packages(before, after):
+    value = packages.policy()
+    with pytest.raises(ValueError):
+        packages.check_metadata(metadata("opentlv", value).replace(before, after), "opentlv", value)
+
+
+@pytest.mark.parametrize("mutation", ["version", "dependency", "core", "baseline"])
+def test_source_policy_drift(tmp_path, mutation):
+    for relative in (*packages.PROJECTS, "cmake/python-package.json", "cmake/core-artifact.json",
+                     "docs/migration/source-inventory.json"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, destination)
+    if mutation in ("version", "dependency"):
+        path = tmp_path / packages.PROJECTS[1]
+        text = path.read_text()
+        text = text.replace('version = "0.1.0"', 'version = "0.2.0"') if mutation == "version" else text.replace("==0.1.0", "")
+        path.write_text(text)
+    else:
+        path = tmp_path / ("cmake/core-artifact.json" if mutation == "core" else "cmake/python-package.json")
+        data = read(path)
+        if mutation == "core":
+            data["version"] = "99.0.0"
+        else:
+            data["migration"]["commit"] = "f" * 40
+        write(path, data)
+    with pytest.raises(ValueError):
+        packages.policy(tmp_path)
+
+
+@pytest.mark.parametrize("mutation", ["digest", "core", "missing", "extra", "traversal"])
+def test_bundle_rejects_tampering(tmp_path, mutation):
+    record = records()[0]
+    artifacts(tmp_path, record)
+    native = next((tmp_path / "wheels").glob("opentlv_core*.whl"))
+    if mutation == "digest":
+        native.write_bytes(native.read_bytes() + b"changed")
+    elif mutation == "core":
+        record["core"]["commit"] = "f" * 40
+    elif mutation == "missing":
+        native.unlink()
+    elif mutation == "extra":
+        (tmp_path / "wheels/unexpected.whl").write_bytes(b"extra")
+    else:
+        record["artifacts"]["../outside.whl"] = record["artifacts"].pop(next(iter(record["artifacts"])))
+    with pytest.raises(ValueError):
+        packages.validate_bundle(tmp_path, record, packages.policy())
+
+
+def release_fixture(tmp_path, monkeypatch):
+    data = records("full")
+    pinned = ci_contract.lock()
+    verified = {**pinned, "release_tag": "v" + pinned["version"]}
+    monkeypatch.setattr(ci_contract, "lock", lambda *_: verified)
+    monkeypatch.setattr(release, "preflight", lambda: (IDENTITY, packages.policy(), verified))
+    monkeypatch.setattr(release, "definition_hashes", lambda: {})
+    evidence = tmp_path / "evidence"
+    for record in data:
+        record["require_release"] = True
+        record["definitions"] = {}
+        record["core"].update(mode="verified-source", verified=True, release_id=1,
+                              release_tag=verified["release_tag"], manifest_sha256="a" * 64)
+        directory = evidence / record["configuration"]["id"]
+        artifacts(directory / "ci", record)
+        write(directory / "record.json", record)
+    quality = tmp_path / "quality.json"
+    write(quality, ci_contract.validate_records(data, "full", IDENTITY, {}, CHECKS, True))
+    return evidence, quality, tmp_path / "release"
+
+
+def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypatch):
+    evidence, quality, output = release_fixture(tmp_path, monkeypatch)
+    release.assemble(evidence, quality, output)
+    manifest = read(output / "manifest.json")
+    assert manifest["publication_enabled"] is False
+    assert manifest["identity"] == IDENTITY
+    assert len(manifest["configurations"]) == 15
+    for line in (output / "SHA256SUMS").read_text().splitlines():
+        sha, name = line.split("  ")
+        assert sha == digest(output / name)
+    import hashlib
+    with zipfile.ZipFile(next(output.glob("*.zip"))) as archive:
+        assert json.loads(archive.read("manifest.json")) == manifest
+        for name, sha in manifest["files"].items():
+            assert hashlib.sha256(archive.read(name)).hexdigest() == sha
+    with pytest.raises(ValueError, match="fresh"):
+        release.assemble(evidence, quality, output)
+
+
+@pytest.mark.parametrize("mutation", ["attempt", "missing", "digest", "quality", "unverified"])
+def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation):
+    evidence, quality, output = release_fixture(tmp_path, monkeypatch)
+    path = next(evidence.rglob("record.json"))
+    record = read(path)
+    if mutation == "missing":
+        path.unlink()
+    elif mutation == "quality":
+        report = read(quality)
+        report["records"][record["configuration"]["id"]] = "0" * 64
+        write(quality, report)
+    elif mutation == "digest":
+        wheel = next(evidence.rglob("*.whl"))
+        wheel.write_bytes(wheel.read_bytes() + b"changed")
+    else:
+        if mutation == "attempt":
+            record["identity"]["run_attempt"] = "1"
+        else:
+            record["core"]["verified"] = False
+        write(path, record)
+    with pytest.raises(ValueError):
+        release.assemble(evidence, quality, output)
+    assert not output.exists()
+
+
+def test_release_preflight_rejects_current_null_lock():
+    with pytest.raises(ValueError, match="published Core"):
+        release.preflight()
+
+
+@pytest.mark.parametrize("key,value", [("hosted", False), ("dirty", True), ("repository", "other/repo")])
+def test_release_preflight_rejects_untrusted_identity(monkeypatch, key, value):
+    monkeypatch.setattr(release, "lock", lambda *_: {})
+    monkeypatch.setattr(release, "identity", lambda: {**IDENTITY, key: value})
+    with pytest.raises(ValueError, match="official clean hosted"):
+        release.preflight()
+
+
+def test_release_preflight_requires_manual_main(monkeypatch):
+    monkeypatch.setattr(release, "lock", lambda *_: {})
+    monkeypatch.setattr(release, "identity", lambda: copy.deepcopy(IDENTITY))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/feature/test")
+    with pytest.raises(ValueError, match="main"):
+        release.preflight()
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    assert release.preflight()[0] == IDENTITY
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    with pytest.raises(ValueError, match="main"):
+        release.preflight()

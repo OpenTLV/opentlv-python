@@ -9,9 +9,11 @@ import shutil
 import yaml
 
 from build_support import ROOT, require, run
+from package_contract import policy
 
 
 def main():
+    policy()
     for directory in ("bindings", "scripts", "tests"):
         for path in (ROOT / directory).rglob("*.py"):
             if "__pycache__" not in path.parts:
