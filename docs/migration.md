@@ -67,7 +67,10 @@ this frozen import inventory rather than updating its hashes to hide changes.
   `opentlv`, and both package versions (`0.1.0`) remain unchanged.
 - Public names, signatures, exception handling, diagnostic mappings,
   ownership, cleanup, and native capsule behavior are unchanged.
-- `opentlv.__version__` reports the linked Core version.
+- At the migration baseline, `opentlv.__version__` reports the linked Core
+  version. Standalone packaging (#4) subsequently changes this to the Python
+  binding version; see [versioning](versioning.md). Historical evidence below
+  retains the original behavior.
 - Optional-format availability and fixed-format behavior are unchanged.
 - Existing tests and examples are copied without rewriting assertions.
 - No Core sources, tests, generators, or CI workflows are removed or changed.

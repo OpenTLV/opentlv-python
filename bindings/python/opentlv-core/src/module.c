@@ -29,7 +29,7 @@
 #include <tlv/query/query.h>
 #include <tlv/reader/reader.h>
 #include <tlv/schema/schema.h>
-#include <tlv/version.h>
+#include "opentlv_python_version.h"
 #include <tlv/writer/writer.h>
 #include "../../../common/path_query.h"
 
@@ -37,7 +37,7 @@ static PyObject* opentlv_python_error = NULL;
 
 static PyObject* _opentlv_version_string(PyObject* module, PyObject* Py_UNUSED(args)) {
     (void)module;
-    return PyUnicode_FromString(tlv_version_string());
+    return PyUnicode_FromString(OPENTLV_PYTHON_VERSION_STRING);
 }
 
 static PyObject* _opentlv_result_string(PyObject* module, PyObject* args) {
@@ -2033,7 +2033,7 @@ static PyMethodDef opentlv_python_methods[] = {
     {"query_visit", opentlv_python_query_visit, METH_VARARGS,
      "Visit matches through the C Query engine."},
     {"version_string", _opentlv_version_string, METH_NOARGS,
-     "Return the version of the linked OpenTLV C library, for example \"0.6.0\"."},
+     "Return the Python binding version, for example \"0.1.0\"."},
     {"result_string", _opentlv_result_string, METH_VARARGS,
      "Return the readable description of a tlv_result_t code."},
     {"read", _opentlv_read, METH_VARARGS,

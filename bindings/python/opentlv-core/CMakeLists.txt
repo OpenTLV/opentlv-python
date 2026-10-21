@@ -11,6 +11,7 @@ target_sources(_opentlv PRIVATE src/formats/ber.c src/formats/cer.c
     src/formats/der.c src/formats/emv.c src/formats/nfc_type2.c src/formats/lldp.c)
 
 target_link_libraries(_opentlv PRIVATE OpenTLV::tlv)
+target_include_directories(_opentlv PRIVATE "${PROJECT_BINARY_DIR}/generated")
 target_compile_features(_opentlv PRIVATE c_std_99)
 
 install(TARGETS _opentlv DESTINATION . COMPONENT Python)

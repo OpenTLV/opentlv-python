@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "version": "0.1.0",
+  "requires_python": ">=3.11",
+  "compatible_core_versions": ["0.7.1"],
+  "migration": {
+    "repository": "https://github.com/OpenTLV/opentlv",
+    "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",
+    "inventory_sha256": "5e225cf5579b347dae0a7fa01591905833043ba40467afde61df8a95cde7516b"
+  }
+}

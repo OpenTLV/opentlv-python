@@ -16,6 +16,7 @@ from build_support import ROOT, digest, read, require, run, write
 from ci_contract import (TIERS, definition_hashes, identity, matrix,
                          validate_dependency, validate_records)
 from verified_core import lock
+from package_contract import inspect_artifacts, policy as package_policy, validate_bundle
 
 
 def wheel_inventory(directory):
@@ -44,6 +45,7 @@ def build(args):
     # Invalidate a previous success before any check/build can fail.
     args.output.unlink(missing_ok=True)
     lock(args.require_release)
+    package = package_policy()
     require(not args.require_release or args.tier == "full", "Release requires Full CI")
     configurations = {item["id"]: item for item in matrix(args.tier)}
     require(args.configuration in configurations, "Configuration is outside this tier")
@@ -84,6 +86,7 @@ def build(args):
     selected = read(native / "core-selection.json")
     validate_dependency(selected, args.require_release)
     wheels = wheel_inventory(wheel_dir)
+    artifacts = inspect_artifacts(work, args.tier, selected, package)
     # Runtime installation is isolated from both the build environment and source imports.
     environment = work / "runtime"
     # pip --python supports an empty venv even on distributions without ensurepip.
@@ -103,6 +106,7 @@ def build(args):
     record.update({"core": selected, "compiler": read(native / "core-probe.json"),
                    "packaging": "sdist-wheel" if args.tier == "full" else "wheel",
                    "wheels": {name: digest(path) for name, path in wheels.items()},
+                   "package_version": package["version"], "artifacts": artifacts,
                    "seconds": time.monotonic() - started, "status": "success"})
     # Check test completeness before uploading a success record.
     from ci_contract import junit_counts
@@ -146,6 +150,8 @@ def main():
         require(current["hosted"] and not current["dirty"] and current["repository"] == "OpenTLV/opentlv-python",
                 "Hosted quality evidence requires the official clean checkout")
         records = [read(path) for path in sorted(args.evidence.rglob("record.json"))]
+        for path in sorted(args.evidence.rglob("record.json")):
+            validate_bundle(path.parent / "ci", read(path), package_policy())
         report = validate_records(records, args.tier, current, definition_hashes(),
                                   json.loads(os.environ["CHECK_RESULTS"]), args.require_release)
         write(args.output, report)

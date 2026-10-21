@@ -10,12 +10,17 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 
+[project.urls]
+Homepage = "https://github.com/OpenTLV/opentlv-python"
+Issues = "https://github.com/OpenTLV/opentlv-python/issues"
+
 [tool.scikit-build]
 cmake.version = ">=3.26"
 wheel.packages = []
 wheel.py-api = "cp311"
 build.targets = ["_opentlv"]
 install.components = ["Python"]
-sdist.include = ["CMakeLists.txt", "cmake/**", "scripts/**", "bindings/**"]
+sdist.include = ["CMakeLists.txt", "cmake/**", "scripts/**", "bindings/**",
+                 "docs/migration/source-inventory.json"]
 sdist.exclude = ["build/**", "dist/**", ".venv/**", ".vscode/**",
                  "**/__pycache__/**", "**/*.pyc"]

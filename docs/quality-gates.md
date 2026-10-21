@@ -73,10 +73,11 @@ The native migration has documented analyzer false positives in
 [`static-analysis-baseline.json`](../cmake/static-analysis-baseline.json).
 Only the affected checkers in `module.c` and `writer.c` are excluded; cppcheck's
 two `Py_RETURN_NONE` reports are suppressed at their exact lines. The exclusions
-require the exact original SHA-256 of each source file. Any source change fails
+require the exact reviewed SHA-256 of each source file. Any source change fails
 until those exceptions are reassessed, so they cannot silently hide new code.
 Pointer-sized allocations of `PyObject*` arrays are explicitly permitted by
-clang-tidy's sizeof policy. The existing native implementation remains unchanged.
+clang-tidy's sizeof policy. The #4 binding-version change in `module.c` has a
+reassessed hash; the suppressed paths, checkers and line numbers are unchanged.
 
 ## Dependency verification
 
@@ -133,11 +134,21 @@ Do not require individual Full matrix jobs on every PR. This implementation does
 not change repository settings. A workflow file alone does not enforce merging
 rules.
 
-Artifacts include attempt-scoped records, runtime JUnit output and build logs.
+Artifacts include attempt-scoped records, runtime JUnit output, build logs,
+tested wheels and (for Full) both source distributions. Metadata, exact package
+dependencies, wheel payload and tags, migration provenance and bundled Core
+identity are checked before installation. The gate rechecks the uploaded package
+bytes against the build's SHA-256 inventory. Its report binds the full records
+by digest, including the independently versioned Python distributions.
 The gate uploads `quality.json` only after acceptance. Timing collection uses the
 same run/attempt, excludes itself and retries delayed API completion metadata.
 Reported job seconds are elapsed runner time, not billed minutes. This is the
 first standalone CI baseline; no hosted speedup or measured latency is claimed.
+
+The manual [release preparation](releases.md) calls Full with verified Core
+required and assembles only the current run attempt's validated packages.
+Publication is disabled. See [versioning](versioning.md) for the binding version
+and the separate Core compatibility policy.
 
 ## Local validation
 
@@ -164,3 +175,4 @@ configure with Ninja, `CMAKE_EXPORT_COMPILE_COMMANDS=ON` and the intended
 with `--tool clang-tidy` and `--tool cppcheck`.
 
 See [local validation and remaining hosted acceptance](validation/ci.md).
+The #4 package/version changes have a separate [validation record](validation/packaging.md).

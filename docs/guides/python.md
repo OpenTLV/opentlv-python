@@ -33,7 +33,7 @@ selects its pinned Core dependency independently of a sibling checkout.
 ```python
 import opentlv
 
-print(opentlv.__version__)
+print(opentlv.__version__)  # Python binding version, independent of Core
 ```
 
 Runnable round-trip version:

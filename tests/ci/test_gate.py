@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import ci_contract as contract
 from build_support import ROOT, read
+from package_contract import DISTRIBUTIONS, policy as package_policy
 
 IDENTITY = {"repository": contract.REPOSITORY, "commit": "a" * 40, "run_id": "100",
             "run_attempt": "2", "hosted": True, "dirty": False}
@@ -21,6 +22,12 @@ CHECKS = {name: {"result": "success"} for name in ("build", "quality", "codeql")
 def records(tier="pr"):
     policy = read(ROOT / "cmake/ci-matrix.json")
     pinned = contract.lock()
+    version = package_policy()["version"]
+    artifacts = {f"wheels/opentlv-{version}-py3-none-any.whl": "c" * 64,
+                 f"wheels/opentlv_core-{version}-cp311-abi3-linux_x86_64.whl": "d" * 64}
+    if tier == "full":
+        artifacts.update({f"sdists/{name.replace('-', '_')}-{version}.tar.gz": "e" * 64
+                          for name in DISTRIBUTIONS})
     return [{"schema": 1, "tier": tier, "status": "success", "identity": copy.deepcopy(IDENTITY),
              "definitions": dict(DEFINITIONS), "configuration": item, "require_release": False,
              "runtime": {"system": item["system"], "python": item["python"] + ".1"},
@@ -29,6 +36,8 @@ def records(tier="pr"):
              "core": {key: pinned[key] for key in ("repository", "commit", "version")}
              | {"mode": "pinned-git", "verified": False, "dirty": False},
              "smoke": True, "wheels": {"opentlv": "c" * 64, "opentlv-core": "d" * 64},
+             "package_version": version, "package_versions": dict.fromkeys(DISTRIBUTIONS, version),
+             "artifacts": dict(artifacts),
              "tests": {"tests": policy["pytest_cases"], "failures": 0, "errors": 0, "skipped": 0},
              "examples": policy["examples"],
              "query": {"fixtures": policy["query_fixtures"], "checks": policy["query_checks"]},
@@ -60,6 +69,8 @@ def test_complete_gate(tier):
     (("tests", "failures"), 1), (("examples",), 7), (("query", "checks"), 663),
     (("query", "fixtures"), 170), (("packaging",), "none"), (("smoke",), False),
     (("wheels", "opentlv-core"), "bad"), (("require_release",), True),
+    (("package_version",), "0.7.1"), (("package_versions", "opentlv"), "0.2.0"),
+    (("artifacts",), {}),
     (("compiler", "SYSTEM"), "Windows"), (("compiler", "COMPILER_ID"), ""),
     (("compiler", "CROSS_COMPILING"), "TRUE"),
 ])
