@@ -1,7 +1,7 @@
 # Python source migration
 
 This document records the historical #1 baseline. Standalone integration in
-#2 subsequently changed build metadata and guides, while preserving the native
+issue #2 subsequently changed build metadata and guides, while preserving the native
 and Python implementation, existing tests, examples and frozen inventory.
 Use the [current build guide](development/python.md) for installation.
 To verify the original import without requiring today's working tree to match it:

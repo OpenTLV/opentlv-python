@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Clarify standalone installation, workspace development, supported Python versions and contribution ownership, and link examples to the Python repository. (OpenTLV/opentlv-docs#34)
 - Report the independent Python binding version through `opentlv.__version__` and `_opentlv.version_string()`, and require the matching native package version. (#4)
 
 ### Fixed
