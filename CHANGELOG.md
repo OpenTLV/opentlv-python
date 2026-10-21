@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix macOS CI startup with Bash 3.2 while preserving optional verified-Core arguments and failure propagation. (#3)
+
 ### Added
 
 - Add standalone Python PR, Main, and Full CI with installed-package tests, platform/version coverage, and verified dependency quality gates. (#3)
