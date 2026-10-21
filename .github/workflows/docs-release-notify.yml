@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Marek Cingel
+name: Notify Python release documentation
+on:
+  workflow_run:
+    workflows: [Python release preparation]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: python-release-docs-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  notify:
+    if: >-
+      github.repository == 'OpenTLV/opentlv-python' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/python-release.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require successful publication in the producer attempt
+        id: producer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
+              ...context.repo, run_id: run.id, attempt_number: run.run_attempt, per_page: 100
+            });
+            const selected = jobs.filter(job => job.name === 'Publish verified Python release');
+            if (selected.length !== 1 || !['success', 'skipped'].includes(selected[0].conclusion)) {
+              throw new Error('Missing successful publication job in this release attempt.');
+            }
+            core.setOutput('published', selected[0].conclusion === 'success');
+      # Read only JSON. No checkout or producer code executes with the dispatch token.
+      - uses: actions/download-artifact@v4
+        if: steps.producer.outputs.published == 'true'
+        with:
+          name: component-release-${{ github.event.workflow_run.run_attempt }}
+          path: evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Verify published release receipt and notify Docs
+        if: steps.producer.outputs.published == 'true'
+        shell: python
+        env:
+          DOCS_TOKEN: ${{ secrets.OPENTLV_DOCS_DISPATCH_TOKEN }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import re
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          run = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())['workflow_run']
+          receipt = json.loads(Path('evidence/release.json').read_text())
+          repository = 'OpenTLV/opentlv-python'
+          if (os.environ['GITHUB_REPOSITORY'] != repository or
+                  run.get('status') != 'completed' or run.get('conclusion') != 'success' or
+                  run.get('event') != 'workflow_dispatch' or run.get('head_branch') != 'main' or
+                  run.get('path') != '.github/workflows/python-release.yml' or
+                  run.get('head_repository', {}).get('full_name') != repository or
+                  receipt.get('schema') != 1 or receipt.get('kind') != 'component-release' or
+                  receipt.get('status') != 'published' or receipt.get('source') != 'python' or
+                  receipt.get('repository') != repository or receipt.get('workflow_commit') != run['head_sha'] or
+                  receipt.get('commit') != run['head_sha'] or
+                  not re.fullmatch(r'[0-9a-f]{40}', receipt.get('commit', '')) or
+                  receipt.get('run_id') != run['id'] or receipt.get('run_attempt') != run['run_attempt'] or
+                  any(type(receipt.get(key)) is not int or receipt[key] <= 0
+                      for key in ('schema', 'run_id', 'run_attempt', 'release_id')) or
+                  not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', receipt.get('tag', '')) or
+                  receipt.get('version') != receipt['tag'][1:]):
+              raise SystemExit('Release receipt does not authorize this notification.')
+          token = os.environ.get('DOCS_TOKEN', '').strip()
+          if not token:
+              raise SystemExit('OPENTLV_DOCS_DISPATCH_TOKEN is required for release documentation.')
+          payload = {key: receipt[key] for key in ('source', 'repository', 'commit', 'run_id', 'run_attempt')}
+          payload['ref'] = receipt['tag']
+          request = Request('https://api.github.com/repos/OpenTLV/opentlv-docs/dispatches',
+                            data=json.dumps({'event_type': 'component-release-published',
+                                             'client_payload': payload}).encode(), method='POST',
+                            headers={'Authorization': 'Bearer ' + token,
+                                     'Accept': 'application/vnd.github+json',
+                                     'Content-Type': 'application/json',
+                                     'X-GitHub-Api-Version': '2022-11-28'})
+          try:
+              with urlopen(request, timeout=30) as response:
+                  if response.status != 204:
+                      raise SystemExit('Unexpected Docs dispatch response.')
+          except HTTPError as error:
+              raise SystemExit(f'Docs dispatch failed (HTTP {error.code}); check token permissions.') from None
+          except (URLError, TimeoutError):
+              raise SystemExit('Docs dispatch failed: network unavailable; retry the notifier.') from None
+          print('Docs accepted the release notification; verify its publishing run separately.')
