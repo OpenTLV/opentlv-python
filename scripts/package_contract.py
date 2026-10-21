@@ -14,7 +14,7 @@ from build_support import ROOT, digest, read, require
 from verified_core import lock
 
 DISTRIBUTIONS = ("opentlv-core", "opentlv")
-PROJECTS = ("pyproject.toml", "bindings/python/opentlv/pyproject.toml")
+PROJECTS = ("pyproject.toml", "src/pyproject.toml")
 
 
 def policy(root=ROOT):
@@ -82,6 +82,24 @@ def check_wheel(path, name, value, selected):
             require("opentlv/__init__.py" in payload and
                     all(entry.startswith("opentlv/") and ".." not in PurePosixPath(entry).parts
                         for entry in payload), "Unexpected public wheel payload")
+            require(set(payload) == {path.relative_to(ROOT / "src").as_posix()
+                                    for path in (ROOT / "src/opentlv").glob("*.py")},
+                    "Public wheel source inventory differs")
+
+
+def sdist_inputs(name):
+    """Required build inputs relative to each distribution's source root."""
+    if name == "opentlv":
+        return {"pyproject.toml", "README.md"} | {
+            path.relative_to(ROOT / "src").as_posix()
+            for path in (ROOT / "src/opentlv").glob("*.py")}
+    return {"CMakeLists.txt", "README.md", "pyproject.toml", "src/pyproject.toml",
+            "docs/migration/source-inventory.json"} | {
+                path.relative_to(ROOT).as_posix()
+                for directory in ("cmake", "scripts", "native")
+                for path in (ROOT / directory).rglob("*")
+                if path.is_file() and (path.suffix in (".py", ".c", ".h", ".in", ".json", ".cmake")
+                                       or path.name == "CMakeLists.txt")}
 
 
 def check_sdist(path, name, value):
@@ -95,6 +113,13 @@ def check_sdist(path, name, value):
                     ".." not in PurePosixPath(member.name).parts and
                     "\\" not in member.name and ":" not in member.name and
                     (member.isfile() or member.isdir()) for member in members), "Unsafe sdist member")
+        relative_names = {member.name[len(prefix) + 1:] for member in members if member.isfile()}
+        require(sdist_inputs(name) <= relative_names, "Sdist is missing build inputs")
+        require(not any("bindings" in PurePosixPath(path).parts for path in relative_names),
+                "Sdist contains obsolete bindings layout")
+        if name == "opentlv":
+            require(not any(PurePosixPath(path).parts[0] in ("tests", "examples", "native", "scripts")
+                            for path in relative_names), "Unexpected public sdist payload")
         def content(relative):
             member = archive.getmember(prefix + "/" + relative)
             require(member.isfile(), "Expected a regular sdist input")

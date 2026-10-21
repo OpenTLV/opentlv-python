@@ -12,7 +12,7 @@ The repository contains two distributions with unchanged import names and API:
 | Build path | Distribution | Import |
 | --- | --- | --- |
 | Repository root | `opentlv-core` | `_opentlv` |
-| `bindings/python/opentlv` | `opentlv` | `opentlv` |
+| `src` | `opentlv` | `opentlv` |
 
 Use Python 3.11+, a C99 compiler, Git and CMake 3.26+. The native build uses
 scikit-build-core and CPython's Limited API (`Py_LIMITED_API=0x030B0000`).
@@ -21,12 +21,14 @@ linking. Windows uses the dynamic MSVC runtime. Hatchling builds the public
 package. The Python implementation and native API are unchanged by #2.
 
 ```sh
-python -m pip install . ./bindings/python/opentlv
+python -m pip install . ./src
 ```
 
-The old `pip install ./bindings/python/opentlv-core` entry point belonged to
-the Core monorepo. Its package metadata now lives at the repository root so
-the sdist contains its CMake files, resolver, native sources and common adapters.
+Native package metadata lives at the repository root so its sdist contains
+the CMake files, resolver, `native/src` sources and `native/common` adapters.
+The facade uses `src/opentlv`, with its separate distribution metadata in
+`src/pyproject.toml`. Tests live in `tests/python` and examples in `examples`,
+outside the installed package. Run examples from the repository root.
 Only the Python install component enters the wheel: no Core headers, archives,
 or build tools are installed as Python package payload.
 
@@ -36,7 +38,8 @@ To build both wheels and test native sdist rebuilding:
 python -m pip install build pytest
 python -m build --sdist --outdir build/dist .
 python -m pip wheel --no-deps build/dist/opentlv_core-0.1.0.tar.gz -w build/wheels
-python -m pip wheel --no-deps ./bindings/python/opentlv -w build/wheels
+python -m build --sdist --outdir build/dist ./src
+python -m pip wheel --no-deps build/dist/opentlv-0.1.0.tar.gz -w build/wheels
 ```
 
 ## Core selection
@@ -81,7 +84,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 $coreSource = (Resolve-Path ../opentlv).Path
 python -m pip install . "--config-settings=cmake.define.OPENTLV_PYTHON_CORE_SOURCE=$coreSource"
-python -m pip install ./bindings/python/opentlv
+python -m pip install ./src
 ```
 
 On POSIX shells:
@@ -91,7 +94,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 core_source=$(cd ../opentlv && pwd)
 python -m pip install . --config-settings="cmake.define.OPENTLV_PYTHON_CORE_SOURCE=$core_source"
-python -m pip install ./bindings/python/opentlv
+python -m pip install ./src
 ```
 
 Rebuild and reinstall the native distribution after changing Core. Without
@@ -176,7 +179,7 @@ Use an isolated virtual environment and install both wheels before checking them
 ```sh
 python -m pip install pytest
 python -m pip install . --config-settings=build-dir=build/native
-python -m pip install ./bindings/python/opentlv
+python -m pip install ./src
 python -B -m pytest -p no:cacheprovider -q tests/build
 python -B scripts/check_python.py --selection build/native/core-selection.json
 ```

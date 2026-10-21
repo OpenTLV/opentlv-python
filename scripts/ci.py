@@ -65,7 +65,7 @@ def build(args):
     native = work / "native"
     wheel_dir = work / "wheels"
     wheel_dir.mkdir()
-    sources = [ROOT, ROOT / "bindings/python/opentlv"]
+    sources = [ROOT, ROOT / "src"]
     if args.tier == "full":
         sdist_dir = work / "sdists"
         for source in sources:

@@ -20,7 +20,7 @@ wheel.packages = []
 wheel.py-api = "cp311"
 build.targets = ["_opentlv"]
 install.components = ["Python"]
-sdist.include = ["CMakeLists.txt", "cmake/**", "scripts/**", "bindings/**",
+sdist.include = ["CMakeLists.txt", "cmake/**", "scripts/**", "native/**", "src/**", "tests/**", "examples/**",
                  "docs/migration/source-inventory.json"]
 sdist.exclude = ["build/**", "dist/**", ".venv/**", ".vscode/**",
                  "**/__pycache__/**", "**/*.pyc"]

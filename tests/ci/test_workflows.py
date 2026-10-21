@@ -29,7 +29,7 @@ def test_entry_points_do_not_duplicate_full_ci():
 
 def test_matrix_preserves_platforms_and_declared_cpython_floor():
     import tomllib
-    for path in ("pyproject.toml", "bindings/python/opentlv/pyproject.toml"):
+    for path in ("pyproject.toml", "src/pyproject.toml"):
         assert tomllib.loads((ROOT / path).read_text())["project"]["requires-python"] == ">=3.11"
     configurations = matrix("full")
     assert len({item["id"] for item in configurations}) == 15
@@ -86,4 +86,19 @@ def test_frozen_migration_inventory_and_existing_suite_are_unchanged():
     for entry in inventory["files"]:
         path = entry["destination"]
         if path.startswith(("bindings/python/opentlv/tests/", "bindings/python/opentlv/examples/")):
+            path = path.replace("bindings/python/opentlv/tests/", "tests/python/").replace(
+                "bindings/python/opentlv/examples/", "examples/")
             assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == entry["sha256"]
+
+
+def test_ci_evidence_covers_relocated_inputs():
+    from ci_contract import definition_hashes
+    definitions = definition_hashes()
+    assert not any(path.startswith("bindings/") for path in definitions)
+    for directory, pattern in (("src", "*.py"), ("native", "*.c"), ("native", "*.h"),
+                               ("tests/python", "*.py"), ("examples", "*.py")):
+        paths = list((ROOT / directory).rglob(pattern))
+        assert paths
+        assert all(path.relative_to(ROOT).as_posix() in definitions for path in paths)
+    assert "src/pyproject.toml" in definitions
+    assert "native/CMakeLists.txt" in definitions

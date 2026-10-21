@@ -48,6 +48,12 @@ packaging. The existing public API tests already exercise lifetime/GC scenarios.
 They remain unchanged; no native test framework or unrelated test rewrite is
 introduced.
 
+The suite lives in `tests/python` and runnable examples in `examples`.
+CI builds the native distribution from the repository root and the facade from
+`src`; Full rebuilds both source distributions. Source checks and evidence
+hashes cover `src/opentlv`, `native/src`, `native/common`, tests and examples.
+The layout normalization does not add Full jobs to the ordinary PR gate.
+
 Core owns parsing/writing, format/schema/codec/Query semantics, the shared
 regression corpus, fuzzing, ABI and performance tests. Core tests, examples,
 benchmarks and other language bindings remain disabled during dependency builds.

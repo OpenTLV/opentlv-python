@@ -9,7 +9,7 @@
 #include <tlv/reader/tree.h>
 #include <tlv/reader/visitor.h>
 #include <tlv/query/query.h>
-#include "../../../common/path_query.h"
+#include "../common/path_query.h"
 #include <stdlib.h>
 #include <string.h>
 

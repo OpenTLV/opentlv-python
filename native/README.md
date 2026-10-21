@@ -1,6 +1,6 @@
 # opentlv-core (experimental)
 
-For public API setup and a first task, start with [the Python user guide](../../../docs/guides/python.md).
+For public API setup and a first task, start with [the Python user guide](../docs/guides/python.md).
 The component details below cover packaging, implementation or development.
 
 Native Python bindings to the [OpenTLV](https://github.com/marekcingel/OpenTLV)
@@ -29,5 +29,5 @@ fixed-format operations remain available.
 
 Build `opentlv-core` from the repository root with `python -m pip install .`.
 The root `pyproject.toml` owns native packaging. See the
-[standalone build guide](../../../docs/development/python.md) for Core selection,
+[standalone build guide](../docs/development/python.md) for Core selection,
 attestation and validation. Reduced-feature packages are not supported.

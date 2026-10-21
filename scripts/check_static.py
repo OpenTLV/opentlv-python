@@ -8,7 +8,7 @@ import shutil
 
 from build_support import ROOT, digest, read, require, run, write
 
-SOURCE = ROOT / "bindings/python/opentlv-core/src"
+SOURCE = ROOT / "native/src"
 
 
 def baseline():
@@ -54,7 +54,7 @@ def main():
             checks = exceptions.get(relative, {}).get("clang-tidy", [])
             options = ["--checks=" + ",".join("-" + check for check in checks)] if checks else []
             run(executable, "-quiet", "-p", args.build, "--warnings-as-errors=*",
-                "--header-filter=.*bindings/(common|python/opentlv-core)/.*", *options, item["file"])
+                "--header-filter=.*native/(common|src)/.*", *options, item["file"])
 
 
 if __name__ == "__main__":

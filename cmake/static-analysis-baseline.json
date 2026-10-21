@@ -1,11 +1,11 @@
 {
-  "bindings/python/opentlv-core/src/module.c": {
-    "sha256": "bf39596b66b59e3797e9e717eb9fa36805a57ca78395564509d90ac50dc70818",
+  "native/src/module.c": {
+    "sha256": "4736202e112fe93883e621208247f902cd0b9fc23c6a3d6477f418c837cc77b1",
     "clang-tidy": ["clang-analyzer-optin.core.EnumCastOutOfRange"],
     "cppcheck": ["missingReturn:746", "missingReturn:1385"],
-    "reason": "Reassessed for #4: only the version include, return expression and docstring changed; suppressed paths and line numbers are unchanged. Clang 18 does not model PyErr_SetString/PyErr_Occurred, so it follows an impossible path past kind validation (line 455). Cppcheck 2.13 does not recognize the Py_RETURN_NONE return at lines 747 and 1386."
+    "reason": "Relocated for #10: only the adapter include path changed; suppressed code and line numbers remain unchanged. Reassessed for #4: only the version include, return expression and docstring changed; suppressed paths and line numbers are unchanged. Clang 18 does not model PyErr_SetString/PyErr_Occurred, so it follows an impossible path past kind validation (line 455). Cppcheck 2.13 does not recognize the Py_RETURN_NONE return at lines 747 and 1386."
   },
-  "bindings/python/opentlv-core/src/writer.c": {
+  "native/src/writer.c": {
     "sha256": "6faedbd2d9b8dd04812eef7a6bc6382583a84ae36c0793cf5ae599af87ec4fca",
     "clang-tidy": ["clang-analyzer-core.NullDereference"],
     "cppcheck": [],

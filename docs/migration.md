@@ -4,6 +4,9 @@ This document records the historical #1 baseline. Standalone integration in
 issue #2 subsequently changed build metadata and guides, while preserving the native
 and Python implementation, existing tests, examples and frozen inventory.
 Use the [current build guide](development/python.md) for installation.
+Issue #10 subsequently moved package sources to `src/opentlv`, native code
+and adapters to `native`, tests to `tests/python`, and examples to `examples`.
+Paths and commands below describe the historical import, not today's layout.
 To verify the original import without requiring today's working tree to match it:
 
 ```sh

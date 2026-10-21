@@ -14,7 +14,7 @@ from package_contract import policy
 
 def main():
     policy()
-    for directory in ("bindings", "scripts", "tests"):
+    for directory in ("src", "examples", "scripts", "tests"):
         for path in (ROOT / directory).rglob("*.py"):
             if "__pycache__" not in path.parts:
                 ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
@@ -27,7 +27,7 @@ def main():
     require(formatter, "clang-format is required")
     require("version 23.1.1" in run(formatter, "--version", capture=True),
             "Use Core's pinned clang-format 23.1.1")
-    for path in sorted((ROOT / "bindings").rglob("*")):
+    for path in sorted((ROOT / "native").rglob("*")):
         if path.suffix in (".c", ".h"):
             run(formatter, "--dry-run", "--Werror", path)
     run("git", "diff", "--check")
