@@ -1,8 +1,9 @@
 # Python quality gates
 
 Python follows the PR, Main and Full entry points established by standalone Lua.
-Full is reusable by a future release workflow; this repository does not publish
-packages or create tags through these workflows.
+Full is reused by the manual release workflow. PR/Main/Full do not publish;
+the release workflow can optionally create a verified GitHub release and tag.
+Package-index publication remains disabled.
 
 | Entry point | Trigger | Required work |
 | --- | --- | --- |
@@ -204,7 +205,8 @@ first standalone CI baseline; no hosted speedup or measured latency is claimed.
 
 The manual [release preparation](releases.md) calls Full with verified Core
 required and assembles only the current run attempt's validated packages.
-Publication is disabled. See [versioning](versioning.md) for the binding version
+Its optional `publish_release` input creates a GitHub release/tag and notifies
+Docs; package-index publication stays disabled. See [versioning](versioning.md) for the binding version
 and the separate Core compatibility policy.
 
 ## Local validation

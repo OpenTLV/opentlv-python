@@ -1,8 +1,9 @@
 # Python release preparation
 
 `Python release preparation` (`python-release.yml`) is a manual candidate gate.
-It does not create remote tags, GitHub Releases, or publish to PyPI/TestPyPI.
-No package-index credentials or publisher jobs are configured.
+By default it produces an attested candidate. The optional `publish_release`
+input also creates the version tag and a GitHub Release after verification.
+No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
 
 ## Prepare a candidate
 
@@ -38,6 +39,43 @@ to verify downloaded subjects against `OpenTLV/opentlv-python` and the
 `python-release.yml` signer. Check the expected commit and run as well as
 `SHA256SUMS`; a checksum alone does not authenticate the producer. Manifest
 records are evidence, while the hosted attestation authenticates their origin.
+
+## GitHub release and documentation publication
+
+To release the verified candidate on GitHub, dispatch the same workflow from
+`main` with `publish_release: true`. Do not create the tag beforehand. The tag
+is `v<package version>` and must be a stable version matching both distributions.
+The publisher requires successful Full and assembly jobs, the exact current
+run/attempt, unchanged candidate metadata and checksums, and valid attestations
+for all three candidate files. It then creates the tag at the dispatch commit
+and uploads those files to the GitHub Release. It never uploads packages to PyPI.
+
+Only after GitHub confirms a published release does the workflow upload
+`component-release-<attempt>` containing `release.json`. The separate
+`Notify Python release documentation` workflow checks the publication job and
+receipt, then sends `component-release-published` to `OpenTLV/opentlv-docs`.
+Candidate-only runs skip this notification. The notifier performs no checkout
+and executes no downloaded code with the dispatch credential.
+
+Install the Docs receiver/configuration before enabling this producer.
+Configure `OPENTLV_DOCS_DISPATCH_TOKEN` with Contents write permission limited
+to `OpenTLV/opentlv-docs`. Docs needs `OPENTLV_COMPONENT_READ_TOKEN` with Contents
+and Actions read access to the configured component repositories. It verifies
+the successful producer, attempt-scoped artifact digest, published release ID
+and exact tag/commit before publishing `python/<version>/` and updating the
+Python version catalog/stable alias. Development pins and other components'
+published documentation remain unchanged.
+
+Retry a failed notifier while the producer receipt is retained; duplicate
+notifications reuse the immutable snapshot. A failed publisher may leave a tag
+or partial GitHub release: inspect and recover manually before retrying. The
+publisher never overwrites an existing tag or release. Full-run retries produce
+new attempt identities, so old artifacts cannot authorize a new attempt.
+After receipt expiry, publication requires a newly verified producer receipt;
+do not fabricate one from an old preparation artifact.
+
+Local tests mock GitHub publication and dispatch. Hosted release, receipt,
+Docs publication and resulting URLs still require end-to-end verification.
 
 ## Future PyPI publication (separate approval and issue)
 

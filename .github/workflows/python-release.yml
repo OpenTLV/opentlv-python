@@ -3,6 +3,11 @@
 name: Python release preparation
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Create the version tag and GitHub release after Full verification (no PyPI upload)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -62,4 +67,36 @@ jobs:
         with:
           name: python-release-candidate-${{ github.run_attempt }}
           path: build/release/*
+          if-no-files-found: error
+  publish:
+    name: Publish verified Python release
+    needs: [full, assemble]
+    if: inputs.publish_release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-release-candidate-${{ github.run_attempt }}
+          path: build/release
+      - name: Verify attested candidate and publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          FULL_RESULT: ${{ needs.full.result }}
+          ASSEMBLE_RESULT: ${{ needs.assemble.result }}
+        run: python -B scripts/publish_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: component-release-${{ github.run_attempt }}
+          path: build/docs-release/release.json
           if-no-files-found: error

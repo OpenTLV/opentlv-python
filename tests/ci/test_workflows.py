@@ -63,7 +63,7 @@ def test_core_native_tests_stay_disabled():
     assert not (ROOT / "tests/query/corpus.json").exists()
 
 
-def test_release_prepares_attested_artifacts_without_publication():
+def test_release_prepares_attested_artifacts_and_only_opts_into_github_publication():
     release = workflow("python-release.yml")
     assert set(release["on"]) == {"workflow_dispatch"}
     assert release["permissions"] == {"contents": "read"}
@@ -72,12 +72,17 @@ def test_release_prepares_attested_artifacts_without_publication():
     assert set(release["jobs"]["assemble"]["needs"]) == {"preflight", "full"}
     assert any(step.get("uses", "").startswith("actions/attest-build-provenance@")
                for step in release["jobs"]["assemble"]["steps"])
+    assert release["on"]["workflow_dispatch"]["inputs"]["publish_release"]["default"] == "false"
+    assert release["jobs"]["publish"]["if"] == "inputs.publish_release"
+    assert set(release["jobs"]["publish"]["needs"]) == {"full", "assemble"}
+    assert release["jobs"]["publish"]["permissions"]["contents"] == "write"
     for path in (ROOT / ".github/workflows").glob("*.yml"):
         text = path.read_text()
         assert "pypa/gh-action-pypi-publish" not in text
         assert "twine upload" not in text
         assert "gh release create" not in text
-        assert "contents: write" not in text
+        if path.name != "python-release.yml":
+            assert "contents: write" not in text
 
 
 def test_frozen_migration_inventory_and_existing_suite_are_unchanged():
