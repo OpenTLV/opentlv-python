@@ -12,6 +12,27 @@ concurrency:
   group: python-main-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  docs_changes:
+    needs: [checks]
+    if: github.repository == 'OpenTLV/opentlv-python'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record relevant changes since the previous successful Main run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -B scripts/docs_notification.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-notification-${{ github.run_attempt }}
+          path: build/docs-notification/notification.json
+          if-no-files-found: error
   checks:
     uses: ./.github/workflows/python-checks.yml
     permissions:

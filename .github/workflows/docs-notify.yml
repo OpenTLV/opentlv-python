@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Marek Cingel
+name: Notify Python documentation portal
+on:
+  workflow_run:
+    workflows: [Python Main CI]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: python-docs-notify-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  notify:
+    if: >-
+      github.repository == 'OpenTLV/opentlv-python' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/python-main.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      # Only read JSON from the successful producer; never execute its code.
+      - uses: actions/download-artifact@v4
+        with:
+          name: docs-notification-${{ github.event.workflow_run.run_attempt }}
+          path: evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Verify evidence and notify Docs
+        shell: python
+        env:
+          DOCS_TOKEN: ${{ secrets.OPENTLV_DOCS_DISPATCH_TOKEN }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import re
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          run = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())['workflow_run']
+          record = json.loads(Path('evidence/notification.json').read_text())
+          repository = 'OpenTLV/opentlv-python'
+          if (os.environ['GITHUB_REPOSITORY'] != repository or
+                  run.get('status') != 'completed' or run.get('conclusion') != 'success' or
+                  run.get('event') != 'push' or run.get('head_branch') != 'main' or
+                  run.get('path') != '.github/workflows/python-main.yml' or
+                  run.get('head_repository', {}).get('full_name') != repository or
+                  not re.fullmatch(r'[0-9a-f]{40}', run.get('head_sha', '')) or
+                  type(record.get('changed')) is not bool or
+                  any(type(record.get(key)) is not int or record[key] <= 0
+                      for key in ('schema', 'run_id', 'run_attempt')) or
+                  record != {'schema': 1, 'repository': repository, 'commit': run['head_sha'],
+                             'ref': 'main', 'run_id': run['id'], 'run_attempt': run['run_attempt'],
+                             'changed': record['changed']}):
+              raise SystemExit('Documentation notification evidence does not match the trusted Main run.')
+          if not record['changed']:
+              print('No documentation changes; no dispatch required.')
+          else:
+              token = os.environ.get('DOCS_TOKEN', '').strip()
+              if not token:
+                  raise SystemExit('OPENTLV_DOCS_DISPATCH_TOKEN is required for documentation notification.')
+              payload = {key: record[key] for key in ('repository', 'commit', 'ref', 'run_id')}
+              payload['source'] = 'python'
+              request = Request('https://api.github.com/repos/OpenTLV/opentlv-docs/dispatches',
+                                data=json.dumps({'event_type': 'component-docs-updated',
+                                                 'client_payload': payload}).encode(), method='POST',
+                                headers={'Authorization': 'Bearer ' + token,
+                                         'Accept': 'application/vnd.github+json',
+                                         'Content-Type': 'application/json',
+                                         'X-GitHub-Api-Version': '2022-11-28'})
+              try:
+                  with urlopen(request, timeout=30) as response:
+                      if response.status != 204:
+                          raise SystemExit('Docs dispatch returned an unexpected response.')
+              except HTTPError as error:
+                  raise SystemExit(f'Docs dispatch failed (HTTP {error.code}); check the dispatch token and Docs repository access.') from None
+              except (URLError, TimeoutError):
+                  raise SystemExit('Docs dispatch failed: network unavailable; retry this notifier.') from None
+              print('Docs accepted the Python source notification; receiver processing is separate.')
