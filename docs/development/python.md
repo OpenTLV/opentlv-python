@@ -149,4 +149,8 @@ Diagnostic generated outputs remain unchanged; generator ownership and package
 publication are not moved by this build integration.
 
 The workflow under `docs/migration/original-python.yml` is historical evidence.
-This issue does not claim hosted CI coverage or add release/publication workflows.
+Standalone PR/Main/Full workflows are documented in
+[quality gates](../quality-gates.md). They validate installed distributions and
+retain the original tests. Source integration #2 did not establish hosted CI
+coverage; #3's [validation record](../validation/ci.md) distinguishes local checks
+from the hosted runs still needed for acceptance. Publication remains separate.

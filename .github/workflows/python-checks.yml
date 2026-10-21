@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Marek Cingel
+name: Python checks
+on:
+  workflow_call:
+    inputs:
+      tier:
+        type: string
+        required: true
+      require_verified_core:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  attestations: read
+  actions: read
+  security-events: write
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  CMAKE_BUILD_PARALLEL_LEVEL: '2'
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - id: matrix
+        env:
+          TIER: ${{ inputs.tier }}
+        run: echo "value=$(python -B scripts/ci.py matrix --tier "$TIER")" >> "$GITHUB_OUTPUT"
+  build:
+    needs: plan
+    name: Python / ${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r requirements-dev.txt
+      - name: Build and validate installed distributions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TIER: ${{ inputs.tier }}
+          CONFIGURATION: ${{ matrix.id }}
+          REQUIRE_RELEASE: ${{ inputs.require_verified_core }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          extra=()
+          if [[ "$REQUIRE_RELEASE" == true ]]; then extra+=(--require-release); fi
+          python -B scripts/ci.py build --tier "$TIER" --configuration "$CONFIGURATION" \
+            --work build/ci --output build/record.json "${extra[@]}" 2>&1 | tee build/ci.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-build-${{ inputs.tier }}-${{ matrix.id }}-${{ github.run_attempt }}
+          path: |
+            build/record.json
+            build/ci.log
+            build/ci/pytest.xml
+          if-no-files-found: error
+  quality:
+    if: inputs.tier != 'main'
+    uses: ./.github/workflows/python-quality.yml
+  codeql:
+    if: inputs.tier != 'main'
+    uses: ./.github/workflows/python-codeql.yml
+  gate:
+    name: Python quality gate
+    if: always()
+    needs: [build, quality, codeql]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-build-${{ inputs.tier }}-*-${{ github.run_attempt }}
+          path: build/evidence
+      - env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+          TIER: ${{ inputs.tier }}
+          REQUIRE_RELEASE: ${{ inputs.require_verified_core }}
+        run: |
+          extra=()
+          if [[ "$REQUIRE_RELEASE" == true ]]; then extra+=(--require-release); fi
+          python -B scripts/ci.py gate --tier "$TIER" --evidence build/evidence \
+            --output build/quality.json "${extra[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-quality-${{ inputs.tier }}-${{ github.run_attempt }}
+          path: build/quality.json
+          if-no-files-found: error
+  timings:
+    name: Python timings
+    if: always()
+    needs: gate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -B scripts/ci_timings.py --scope python --output build/timings.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-timings-${{ inputs.tier }}-${{ github.run_attempt }}
+          path: build/timings.json
+          if-no-files-found: error

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Marek Cingel
+name: Python Pull Request CI
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+  attestations: read
+  actions: read
+  security-events: write
+concurrency:
+  group: python-pr-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    uses: ./.github/workflows/python-checks.yml
+    with:
+      tier: pr

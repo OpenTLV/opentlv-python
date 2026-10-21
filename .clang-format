@@ -1,0 +1,53 @@
+# clang-format configuration for OpenTLV's C++ layer (tlv++) and everything
+# built on top of it: tools/, tests/, benchmarks/, examples/.
+#
+# tlv/ (pure C) has its own tlv/.clang-format instead of a `Language: C`
+# section here: clang-format resolves the nearest .clang-format by walking up
+# from each file's directory, so this stays the effective style everywhere
+# except tlv/. A `Language:`-keyed, single-file split was tried first and
+# dropped - clang-format 18 (pinned in CI and .pre-commit-config.yaml) fails
+# to parse `Language: C` at all, and even versions that do accept it disagree
+# on whether an ambiguous `.h` file counts as C or C++. Per-directory config
+# files sidestep that entirely: no language guessing is involved.
+#
+# Apply it to the whole tree with `cmake --build <build-dir> --target format`,
+# or check formatting without modifying files with `--target format-check`.
+# See CONTRIBUTING.md for details.
+BasedOnStyle: LLVM
+Standard: c++17
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AccessModifierOffset: -4
+ConstructorInitializerIndentWidth: 4
+
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+AlignConsecutiveDeclarations: true
+NamespaceIndentation: None
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+
+SpaceBeforeParens: ControlStatements
+SpacesBeforeTrailingComments: 1
+IndentCaseLabels: true
+
+# Header order in this codebase is deliberate (nearest-to-furthest, not
+# alphabetical); do not let the formatter re-sort or regroup it.
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# TLV_API is a visibility/export specifier and TLV_NODISCARD expands to
+# [[nodiscard]]; both precede a declaration's return type like an attribute.
+AttributeMacros:
+  - TLV_API
+  - TLV_NODISCARD
