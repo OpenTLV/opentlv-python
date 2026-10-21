@@ -19,10 +19,15 @@ unchanged and report enabled providers. Reduced-feature Python packages are
 not supported.
 
 Neither package is published to PyPI yet. Install both by path from a
-checkout of the repository, in one `pip install` call so the `opentlv`
+checkout of [opentlv-python](https://github.com/OpenTLV/opentlv-python),
+in one `pip install` call so the `opentlv`
 package's dependency on `opentlv-core` resolves to the local build:
 
 ```sh
+git clone https://github.com/OpenTLV/opentlv-python.git
+cd opentlv-python
+python -m venv .venv
+# Activate the virtual environment for your shell before installing.
 python -m pip install . ./bindings/python/opentlv
 ```
 
@@ -37,7 +42,7 @@ print(opentlv.__version__)  # Python binding version, independent of Core
 ```
 
 Runnable round-trip version:
-[quick_start.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/quick_start.py)
+[quick_start.py](../../bindings/python/opentlv/examples/quick_start.py)
 (`python examples/quick_start.py` from `bindings/python/opentlv`).
 
 ## Reading
@@ -69,7 +74,7 @@ runtime-configurable fixed-width tag and length (equivalent to the C
 
 Runnable version, parsing a nested BER document and handling truncated
 input:
-[parse.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/parse.py)
+[parse.py](../../bindings/python/opentlv/examples/parse.py)
 (`python examples/parse.py`).
 
 ## Writing
@@ -94,9 +99,9 @@ one produced by a `Reader`, so reading and re-writing round-trips. Like
 encoded size without writing it.
 
 Runnable versions:
-[write.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/write.py)
+[write.py](../../bindings/python/opentlv/examples/write.py)
 builds a nested BER document bottom-up (`python examples/write.py`);
-[writer.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/writer.py)
+[writer.py](../../bindings/python/opentlv/examples/writer.py)
 shows the growable buffer handling a value far larger than its initial
 capacity, and a genuine format error (`python examples/writer.py`).
 
@@ -142,7 +147,7 @@ invalid definition has no input offset.
 
 Runnable version, validating the document `parse.py` reads, and rejecting an
 incomplete one:
-[validate.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/validate.py)
+[validate.py](../../bindings/python/opentlv/examples/validate.py)
 (`python examples/validate.py`).
 
 ## Generic Definition registries
@@ -178,7 +183,7 @@ retains operation, original provider result, contract violation and delegated
 cause when supplied by C. Its `schema` entry is an owned `SchemaDiagnostic`.
 
 Runnable version, decoding and encoding an EMV "Amount, Authorised" element:
-[codec.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/codec.py)
+[codec.py](../../bindings/python/opentlv/examples/codec.py)
 (`python examples/codec.py`).
 
 ## Documents
@@ -223,10 +228,10 @@ Replacing a node's own Value leaves that node usable; its old children become
 invalid only after successful replacement. Unrelated handles remain valid.
 
 Runnable versions:
-[document.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/document.py)
+[document.py](../../bindings/python/opentlv/examples/document.py)
 replaces a value and appends an element in an existing message
 (`python examples/document.py`);
-[query.py](https://github.com/marekcingel/OpenTLV/blob/main/bindings/python/opentlv/examples/query.py)
+[query.py](../../bindings/python/opentlv/examples/query.py)
 addresses a deeply nested element by path instead of navigating node by node,
 including a malformed query and a query with no match
 (`python examples/query.py`).

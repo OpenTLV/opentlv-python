@@ -2,6 +2,11 @@
 
 ## Build
 
+Run these commands from the root of
+[opentlv-python](https://github.com/OpenTLV/opentlv-python), in an activated
+virtual environment. Core remains the source of truth for shared architecture
+and TLV semantics; this repository owns Python implementation and development.
+
 The repository contains two distributions with unchanged import names and API:
 
 | Build path | Distribution | Import |
@@ -65,6 +70,59 @@ For pip, pass the same setting as
 `--config-settings=cmake.define.OPENTLV_PYTHON_CORE_SOURCE=/absolute/path/to/opentlv`.
 Use an absolute path, since build frontends may change the working directory.
 Development overrides are not official release evidence.
+
+## Local workspace development
+
+In [opentlv-workspace](https://github.com/OpenTLV/opentlv-workspace), Core and
+Python are sibling checkouts. From `opentlv-python`, explicitly select Core:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+$coreSource = (Resolve-Path ../opentlv).Path
+python -m pip install . "--config-settings=cmake.define.OPENTLV_PYTHON_CORE_SOURCE=$coreSource"
+python -m pip install ./bindings/python/opentlv
+```
+
+On POSIX shells:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+core_source=$(cd ../opentlv && pwd)
+python -m pip install . --config-settings="cmake.define.OPENTLV_PYTHON_CORE_SOURCE=$core_source"
+python -m pip install ./bindings/python/opentlv
+```
+
+Rebuild and reinstall the native distribution after changing Core. Without
+this override, the standalone build uses its dependency lock even when a
+sibling Core exists. The override is for local development and is rejected
+in CI; use the pinned build for CI validation.
+
+## Supported Python versions
+
+Both distributions require Python 3.11 or newer. The native extension targets
+CPython's 3.11 stable ABI (`cp311-abi3`); the configured Full CI matrix covers
+CPython 3.11 through 3.15 on Linux, Windows and macOS. Matrix configuration is
+not a claim that every hosted run has passed. See the
+[quality gates](../quality-gates.md) and [validation record](../validation/ci.md)
+for scope and evidence. PyPy and free-threaded builds are not in that matrix.
+
+## Contributing and reporting issues
+
+Report Python API, packaging, installation and binding test problems in the
+[Python issue tracker](https://github.com/OpenTLV/opentlv-python/issues), and
+submit Python changes to [opentlv-python](https://github.com/OpenTLV/opentlv-python).
+Include the Python version, operating system, reproduction and installed
+`_opentlv_core_dependency.json` metadata when reporting build problems.
+Run the [installed-package validation](#validation) and the relevant
+[quality checks](../quality-gates.md) before submitting a change.
+
+Shared C behavior and architecture belong to
+[Core](https://github.com/OpenTLV/opentlv); report those problems in the
+[Core issue tracker](https://github.com/OpenTLV/opentlv/issues).
+Portal navigation and presentation belong to
+[opentlv-docs](https://github.com/OpenTLV/opentlv-docs/issues).
 
 ## Full configuration and public Core interface
 
