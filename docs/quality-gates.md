@@ -62,6 +62,13 @@ Python extension translation unit, without analyzing Core's translation units.
 CodeQL analyzes C and Python. Build/dependency and CI infrastructure regressions
 run with pytest. No new Python formatting policy is imposed on migrated tests.
 
+Each build configuration also executes the workflow's build and gate shell steps
+with a stub runner before building packages. These eight regression cases verify
+optional release arguments, quoting, logs and failure propagation, including
+through `tee`. Both commands use nonempty arrays so `set -u` also works with
+macOS Bash 3.2. For local shell-specific checks, set `OPENTLV_TEST_BASH` to the
+desired Bash executable and run `tests/ci/test_shell.py` with pytest.
+
 The native migration has documented analyzer false positives in
 [`static-analysis-baseline.json`](../cmake/static-analysis-baseline.json).
 Only the affected checkers in `module.c` and `writer.c` are excluded; cppcheck's
