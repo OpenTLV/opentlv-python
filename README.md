@@ -97,6 +97,9 @@ and the [layout validation record](docs/validation/layout.md).
 
 ## Continuous integration
 
+Successful Main builds notify the documentation portal when documentation
+inputs change. See the [notification contract and token permissions](docs/quality-gates.md#documentation-portal-notifications).
+
 Pull requests run the installed Python suite on Linux/CPython 3.11 and the
 source quality checks. Pushes to `main` run a short build/import/API smoke.
 Manual or reusable Full CI covers CPython 3.11–3.15 on Linux, Windows and macOS,

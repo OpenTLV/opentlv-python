@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Notify the documentation portal after successful Main CI documentation changes, with exact source identity, isolated dispatch credentials and regression coverage. (#13)
 - Add Python package version/Core compatibility policy, validated CI distribution artifacts, and manual release preparation with checksums and provenance; keep publication disabled. (#4)
 - Add standalone Python PR, Main, and Full CI with installed-package tests, platform/version coverage, and verified dependency quality gates. (#3)
 - Build Python packages independently with pinned Core identity, verified release artifact support, and all supported Core features enabled. (#2)

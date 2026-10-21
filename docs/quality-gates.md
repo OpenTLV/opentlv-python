@@ -16,6 +16,57 @@ repeat the matrix or source analysis. Full has no push, tag or schedule trigger
 and never publishes. A failed configuration does not cancel the remaining Full
 matrix. PR/Main superseded runs can be cancelled.
 
+## Documentation portal notifications
+
+After successful `Python Main CI` on the official repository's `main`, a small
+job records whether documentation inputs changed. It compares against the most
+recent earlier successful Main run, so cancelled or failed pushes do not lose
+documentation changes. If no earlier successful run is available in the latest
+100 successful runs, it checks the complete source tree. Detection includes
+`docs/`, `examples/`, the root README, changelog and contribution guide,
+`src/README.md`, `native/README.md`, and notification workflow/tool changes.
+Unrelated implementation changes produce a record with `changed: false`.
+
+`Notify Python documentation portal` runs after Main finishes successfully. It
+downloads only `docs-notification-<producer attempt>`, validates its repository,
+commit, run and attempt, and skips dispatch when no relevant files changed.
+The notifier performs no checkout and executes no artifact code. PR, fork,
+failed and cancelled runs cannot use its cross-repository credential.
+
+Configure `OPENTLV_DOCS_DISPATCH_TOKEN` as a fine-grained GitHub token restricted
+to **OpenTLV/opentlv-docs**, with **Contents: write** for repository dispatch.
+The producer uses only its read-only `GITHUB_TOKEN`; the dispatch secret is
+available solely to the notifier's final step. Missing credentials, HTTP
+authentication/permission errors and network failures fail the notifier clearly
+without printing the token. They do not change the successful Main result.
+
+The event is `component-docs-updated` with exactly these payload fields:
+
+```json
+{
+  "source": "python",
+  "repository": "OpenTLV/opentlv-python",
+  "commit": "<full producer commit SHA>",
+  "ref": "main",
+  "run_id": 123
+}
+```
+
+Install the paired Docs receiver configuration on Docs `main` first. Docs
+independently verifies the configured `python-main.yml` push run and commit
+ancestry, then proposes a monotonic Python source pin update. Duplicate and
+older pending or merged updates do not replace newer pins. This documentation
+mode makes no runtime compatibility claim and consumes no compatibility feed.
+The proposal runs normal Docs PR checks; neither Python PRs nor this event
+invoke Docs Full or publish Pages. New manual pages still require reviewed
+portal navigation changes.
+
+If dispatch fails, rerun the notifier for the same successful producer while
+its artifact remains available. Replaying a delivered event is safe. After
+artifact expiry, rerun the producer. A 204 response means GitHub accepted the
+event; confirm the Docs receiver run and source-update PR separately. Local
+mocked HTTP tests do not establish hosted delivery or publication.
+
 ## Supported configurations
 
 [`cmake/ci-matrix.json`](../cmake/ci-matrix.json) is the matrix and runtime-test
