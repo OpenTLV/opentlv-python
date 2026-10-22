@@ -7,9 +7,9 @@ Package-index publication remains disabled.
 
 | Entry point | Trigger | Required work |
 | --- | --- | --- |
-| `python-pr.yml` | Pull request to `main` | Linux/CPython 3.11, both installed wheels, all Python tests, examples, Query facade, infrastructure regressions, native formatting/static analysis and CodeQL |
+| `python-pr.yml` | Pull request to `main` | Linux/CPython 3.11, both installed wheels, all Python tests, examples, Query facade, infrastructure regressions, native formatting/static analysis and CodeQL; informational Core API coverage |
 | `python-main.yml` | Push to `main` | Linux/CPython 3.11 wheel build, fresh installation, package/Core identity and public Reader smoke |
-| `python-full.yml` | Manual dispatch or `workflow_call` | All 15 platform/interpreter configurations, both sdists rebuilt as wheels, full installed-package checks, source quality and CodeQL |
+| `python-full.yml` | Manual dispatch or `workflow_call` | All 15 platform/interpreter configurations, both sdists rebuilt as wheels, full installed-package checks, source quality and CodeQL; informational Core API coverage |
 
 PR has no path filters, so a documentation-only pull request still produces its
 required check. Feature branch pushes do not duplicate PR builds. Main does not
@@ -136,6 +136,60 @@ until those exceptions are reassessed, so they cannot silently hide new code.
 Pointer-sized allocations of `PyObject*` arrays are explicitly permitted by
 clang-tidy's sizeof policy. The #4 binding-version change in `module.c` has a
 reassessed hash; the suppressed paths, checkers and line numbers are unchanged.
+
+## Core API coverage
+
+`Core API coverage` reports how much of the pinned Core's public API the binding
+uses. It runs in PR and Full, not Main. The job is informational: it uses
+`continue-on-error`, is not a `Python quality gate` prerequisite and has no
+threshold yet. The coverage epic (#18) tracks raising it.
+
+[`scripts/api_coverage.py`](../scripts/api_coverage.py) fetches only the locked
+Core commit and reads every `TLV_API` function and data declaration under
+`tlv/include`. A declaration shape it does not recognize fails the report
+instead of being skipped. A symbol counts as referenced when its identifier
+appears in `native/` or `src/` outside comments; calls through Core macros are
+not counted. Coverage is reported for core and `tlv/builtins` separately, in
+total and per header, with every unreferenced symbol listed. The Markdown
+summary goes to the job log and job summary. `api-coverage.json` is uploaded
+as an attempt-scoped artifact.
+
+On a pull request, the job also reads the Core lock at the base commit and lists
+the symbols added and removed between the two pins. Added symbols show whether
+the binding already references or ignores them. An unchanged pin is reported
+as such.
+
+[`cmake/api-coverage.json`](../cmake/api-coverage.json) is the configuration and
+ignore list. Each entry has a `reason` and matches header paths relative to
+`tlv/include` (`headers`) or symbol names (`symbols`); both accept `fnmatch`
+patterns. Ignored symbols are excluded from the counts. The current entries are
+the endian, tag, value, size and copy primitives, and the diagnostic producers
+(`tlv_diagnostic_init`, setters, path builders, `tlv_location_set` and
+`tlv_location_resolve`). Diagnostic consumers such as the `*_string` lookups
+and `tlv_diagnostic_path_string` remain counted. Patterns that match nothing
+in the pinned Core are reported, so stale entries are visible after a pin bump.
+Change the ignore list only for symbols the binding intentionally leaves unbound.
+
+The script uses only the Python standard library and has no Python-specific
+paths. The configuration names the Core lock (`repository` and `commit`, the
+schema shared with Rust) and the reference directories. C, C++ and Rust comments
+use `//` and `/* */` rules and Python comments use the tokenizer. Another binding
+can copy the script, add its own configuration and run it from its checkout
+with `--config`.
+
+Run it locally from the repository root:
+
+```sh
+python -B scripts/api_coverage.py
+python -B scripts/api_coverage.py --core ../opentlv --commit HEAD --base-commit <old-sha>
+python -B scripts/api_coverage.py --base origin/main --output build/api-coverage.json
+```
+
+Without `--core`, the script caches the shallow Core fetch in
+`build/api-coverage/core.git`. `--core` reads an existing Core checkout instead;
+the requested commits must already be there. `--commit` measures a different
+Core revision than the lock. `--base` reads the lock at a binding revision, and
+`--base-commit` names a previous Core revision directly.
 
 ## Dependency verification
 

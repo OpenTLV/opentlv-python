@@ -85,6 +85,35 @@ jobs:
   codeql:
     if: inputs.tier != 'main'
     uses: ./.github/workflows/python-codeql.yml
+  api_coverage:
+    name: Core API coverage
+    if: inputs.tier != 'main'
+    # Informational until the coverage epic (#18) sets a threshold; not a gate prerequisite.
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The base revision supplies the previous Core pin for pull requests.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Report pinned Core API coverage
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          coverage_command=(python -B scripts/api_coverage.py --output build/api-coverage.json
+            --summary "$GITHUB_STEP_SUMMARY")
+          if [[ -n "$BASE_SHA" ]]; then coverage_command+=(--base "$BASE_SHA"); fi
+          "${coverage_command[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-api-coverage-${{ inputs.tier }}-${{ github.run_attempt }}
+          path: build/api-coverage.json
+          if-no-files-found: error
   gate:
     name: Python quality gate
     if: always()

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "lock": "cmake/core-artifact.json",
+  "references": ["native", "src"],
+  "ignore": [
+    {
+      "reason": "Endian, tag, value, size and copy primitives; Python represents byte order, comparison, slicing and copies natively.",
+      "headers": ["tlv/endian.h", "tlv/tag.h", "tlv/value.h", "tlv/size.h", "tlv/copy.h"]
+    },
+    {
+      "reason": "Diagnostic producers for C format and codec implementations; Python consumes diagnostics but does not build them.",
+      "symbols": [
+        "tlv_diagnostic_init",
+        "tlv_diagnostic_set_location",
+        "tlv_diagnostic_set_path",
+        "tlv_diagnostic_add_context",
+        "tlv_diagnostic_path_init",
+        "tlv_diagnostic_path_push",
+        "tlv_diagnostic_path_pop",
+        "tlv_location_set",
+        "tlv_location_resolve"
+      ]
+    }
+  ]
+}
