@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Correct the `LICENSE` copyright holder from the OpenTLV organization, inherited from the GitHub template, to Marek Cingel, matching the source headers and the Core license. (#16)
 - Fix macOS CI startup with Bash 3.2 while preserving optional verified-Core arguments and failure propagation. (#3)
 
 ### Added
