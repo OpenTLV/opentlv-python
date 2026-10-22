@@ -139,6 +139,7 @@ reassessed hash; the suppressed paths, checkers and line numbers are unchanged.
 For #20, format specifications moved the suppressed `module.c` lines and
 removed the `writer.c` fixed-format initialization whose analyzer false
 positive needed an exception; clang-tidy 18 passes `writer.c` without one.
+For #21, the generator include moved the suppressed `module.c` lines down by one.
 
 ## Core API coverage
 

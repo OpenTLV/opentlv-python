@@ -11,7 +11,8 @@ bindings](https://github.com/marekcingel/OpenTLV/blob/main/docs/concepts/binding
 Currently bound: `Reader`, `TreeReader`, `Query`/`QueryMatcher`, Visitors,
 `Writer`, `TreeWriter`, `Document`/`Node`, `DocumentBuilder`, `Element`, `Tag`,
 `Format`, `FixedFormat`, `ComposedFormat` with its field encodings,
-`LengthSchema`/`StructureSchema` and the `OpenTLVError` exception hierarchy. The `codec` submodule exposes configured numeric codecs and EMV amounts.
+`LengthSchema`/`StructureSchema`, the `Generator` wire generator and the
+`OpenTLVError` exception hierarchy. The `codec` submodule exposes configured numeric codecs and EMV amounts.
 Other public C codecs remain a capability gap.
 """
 
@@ -54,6 +55,7 @@ from opentlv.field import (ConstructedBit, EscapedLength, FixedIdentifier, Fixed
 from opentlv.fixed_format import FixedFormat
 from opentlv.format import Format
 from opentlv.format_operations import Encoding
+from opentlv.generator import Generator, GeneratorCandidate
 from opentlv.reader import Reader, read
 from opentlv.cursor import Decoded, Layout, TreeItem, TreeEvent, TreeEventKind, TreeReader, Visit
 from opentlv.query import Query, QueryMatcher
@@ -92,6 +94,8 @@ __all__ = [
     "FixedIdentifier",
     "FixedLength",
     "Format",
+    "Generator",
+    "GeneratorCandidate",
     "IdentifierPolicy",
     "InvalidArgError",
     "InvalidSyntaxError",
