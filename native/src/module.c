@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "format.h"
+#include "generator.h"
 #include "reader.h"
 #include "query.h"
 #include "location.h"
@@ -1809,6 +1810,9 @@ static PyMethodDef opentlv_python_methods[] = {
     {"format_measure", opentlv_python_format_measure, METH_VARARGS,
      "Measure the logical framing of one element."},
     {"format_encode", opentlv_python_format_encode, METH_VARARGS, "Encode one element."},
+    {"generator_workspace_size", opentlv_python_generator_workspace_size, METH_O,
+     "Validate generator options and size the native workspace."},
+    {"generate", opentlv_python_generate, METH_VARARGS, "Generate one deterministic wire case."},
     {"source_preserve", opentlv_python_source_preserve, METH_VARARGS,
      "Preserve retained immutable source bytes after C semantic equality checks."},
     {"document_builder_create", opentlv_python_builder_create, METH_VARARGS,
@@ -1918,7 +1922,8 @@ PyMODINIT_FUNC PyInit__opentlv(void) {
     if (module == NULL) {
         return NULL;
     }
-    if (opentlv_python_register_formats(module) < 0) {
+    if (opentlv_python_register_formats(module) < 0 ||
+        opentlv_python_register_generator(module) < 0) {
         Py_DECREF(module);
         return NULL;
     }

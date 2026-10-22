@@ -151,6 +151,44 @@ and Query:
 [compose.py](../../examples/compose.py)
 (`python examples/compose.py`).
 
+## Generating wire data
+
+`Generator(format, candidates, max_elements=..., max_depth=...,
+max_value_size=..., max_case_size=..., seed=...)` produces reproducible test
+streams for property-based tests and fuzz corpora through Core's
+`tlv_generate()`. Each `GeneratorCandidate(tag, min_value_size,
+max_value_size)` names one identifier and its inclusive Value size interval;
+constructed identifiers, as the Format classifies them, receive generated
+children. `generate(case_index)` returns one nonempty complete stream that
+decodes and re-encodes byte-exactly, and `generate_into(buffer, case_index)`
+writes it into caller storage of at least `max_case_size` bytes and returns
+its size.
+
+```python
+import opentlv
+
+generator = opentlv.Generator(
+    opentlv.Format.BER,
+    [opentlv.GeneratorCandidate(b"\x5a", 0, 16), opentlv.GeneratorCandidate(b"\x70", 0, 64)],
+    max_elements=8, max_depth=2, max_value_size=64, max_case_size=512, seed=1)
+cases = [generator.generate(index) for index in range(100)]
+```
+
+The same `Generator.VERSION`, Format, candidates, limits, seed and case index
+always produce the same bytes, independent of earlier calls, so a failing case
+is replayed from its index. The cases are wire data with arbitrary primitive
+Values, not Schema- or Codec-valid content; leave stream terminators and
+identifiers that need contextual ordering out of the candidates. Core
+validates the configuration on each call: invalid limits or candidates raise
+`InvalidArgError`, a Format that cannot read and write or `max_depth` above 64
+raises `UnsupportedError`, and candidates the Format rejects can end in
+`LimitError`. The binding sizes and owns the scratch workspace;
+`workspace_size` reports it.
+
+Runnable version, a round-trip property over 100 cases of a custom format:
+[generate.py](../../examples/generate.py)
+(`python examples/generate.py`).
+
 ## Validating
 
 `LengthSchema` is a per-tag length table whose lookup and length constraints
