@@ -29,7 +29,8 @@ class OpenTLVError(Exception):
     without narrowing the decoded value. For writer failures, `required` is
     the exact encoded size needed to grow the output buffer. `codec_detail`
     optionally carries conversion evidence; its delegated `schema` is an owned
-    `SchemaDiagnostic`.
+    `SchemaDiagnostic`. `region` names the wire region ("header", "tag",
+    "length", "value" or "trailer") of a failed Format operation.
     """
 
     def __init__(self, code: int, offset: Optional[int] = None, expected: Optional[str] = None,
@@ -198,6 +199,7 @@ def _from_native(error: "_native.Error") -> OpenTLVError:
     result.path = tuple(fields.get("path", ())) if fields.get("has_path", False) else None
     result.path_omitted = fields.get("path_omitted", 0)
     result.contexts = tuple(fields.get("contexts", ()))
+    result.region = fields.get("region")
     result.codec_detail = fields.get("codec_detail")
     if result.codec_detail and "schema" in result.codec_detail:
         from opentlv.schema import _diagnostic_from_native

@@ -15,7 +15,7 @@ from typing import Iterable, Optional, Union
 import _opentlv as _native
 
 from opentlv.error import _from_native
-from opentlv.format import Format, _resolve_format
+from opentlv.format import Format, _format_specification
 from opentlv.tag import Tag
 
 UNRESTRICTED = 2**(8 * struct.calcsize("P")) - 1
@@ -230,14 +230,6 @@ class StructureGroup:
         self.max_occurs = max_occurs
 
 
-def _schema_format(format):
-    from opentlv.fixed_format import FixedFormat
-    format = _resolve_format(format)
-    if isinstance(format, FixedFormat):
-        return (format.tag_size, format.length_size, format.big_endian)
-    return format
-
-
 class StructureSchema:
     """A structural schema: per-tag length, kind, occurrence and membership
     rules for one parent scope, with optional nested schemas for children.
@@ -284,7 +276,7 @@ class StructureSchema:
         `InvalidSchemaError` for an invalid definition, or a reading error
         such as `LimitError`.
         """
-        format = _schema_format(format)
+        format = _format_specification(format)
         try:
             _native.structure_validate(data, format, self._to_native(), max_depth, max_elements)
         except _native.Error as native_error:
@@ -299,7 +291,7 @@ class StructureSchema:
         returning a partial report. No traversal or validation occurs in Python.
         """
         try:
-            count, items = _native.structure_validate(data, _schema_format(format),
+            count, items = _native.structure_validate(data, _format_specification(format),
                 self._to_native(), max_depth, max_elements, capacity, int(unknown))
         except _native.Error as error:
             raise _from_native(error) from None

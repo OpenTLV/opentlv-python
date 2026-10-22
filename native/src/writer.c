@@ -3,7 +3,6 @@
 
 #include "writer.h"
 #include "format.h"
-#include <tlv/formats/fixed.h>
 #include <tlv/writer/tree.h>
 #include <stdlib.h>
 
@@ -11,7 +10,7 @@
 typedef struct writer_state {
     tlv_tree_writer_t        writer;
     tlv_format_t             format;
-    tlv_fixed_format_t       fixed;
+    PyObject*                format_owner;
     tlv_tree_writer_frame_t* frames;
     uint8_t *                data, *scratch;
     uint8_t*                 tag_storage;
@@ -27,6 +26,7 @@ static void release_writer(writer_state* self) {
     free(self->data);
     free(self->scratch);
     free(self->tag_storage);
+    Py_XDECREF(self->format_owner);
     free(self);
 }
 static void destroy_writer(PyObject* capsule) {
@@ -36,10 +36,9 @@ static void destroy_writer(PyObject* capsule) {
 
 PyObject* opentlv_python_tree_writer_create(PyObject* module, PyObject* args) {
     (void)module;
-    int        format_id, big_endian;
-    Py_ssize_t size, scratch, frames, depth, count, tag_size, length_size;
-    if (!PyArg_ParseTuple(args, "innnnnnnp", &format_id, &size, &scratch, &frames, &depth, &count,
-                          &tag_size, &length_size, &big_endian))
+    PyObject*  specification;
+    Py_ssize_t size, scratch, frames, depth, count;
+    if (!PyArg_ParseTuple(args, "Onnnnn", &specification, &size, &scratch, &frames, &depth, &count))
         return NULL;
     if (size < 0 || scratch < 0 || frames < 0 || depth < 0 || count < 0 ||
         (size_t)frames > SIZE_MAX / sizeof(tlv_tree_writer_frame_t) ||
@@ -49,31 +48,12 @@ PyObject* opentlv_python_tree_writer_create(PyObject* module, PyObject* args) {
     }
     writer_state* self = calloc(1, sizeof(*self));
     if (!self) return PyErr_NoMemory();
-    tlv_result_t code = TLV_OK;
-    if (format_id == -1) {
-        if (tag_size < 1 || length_size < 1 || length_size > 8)
-            code = TLV_ERR_INVALID_ARG;
-        else {
-            self->fixed.identifier.size = (size_t)tag_size;
-            self->fixed.length.size = (size_t)length_size;
-            self->fixed.length.byte_order =
-                big_endian ? TLV_BYTE_ORDER_BIG_ENDIAN : TLV_BYTE_ORDER_LITTLE_ENDIAN;
-            self->fixed.element_order = TLV_ELEMENT_ORDER_TLV;
-            self->fixed.length_scope = TLV_LENGTH_SCOPE_VALUE;
-            code = tlv_fixed_format_init(&self->format, &self->fixed);
-        }
-    } else {
-        const tlv_format_t* format = opentlv_python_format_for(format_id);
-        if (!format)
-            code = TLV_ERR_INVALID_ARG;
-        else
-            self->format = *format;
-    }
-    if (code != TLV_OK) {
+    self->format_owner = opentlv_python_format_owner(specification);
+    if (!self->format_owner) {
         release_writer(self);
-        opentlv_python_raise_writer(code, NULL);
         return NULL;
     }
+    self->format = *opentlv_python_format_pointer(self->format_owner);
     self->data = size ? malloc((size_t)size) : NULL;
     self->scratch = scratch ? malloc((size_t)scratch) : NULL;
     self->frames = frames ? calloc((size_t)frames, sizeof(*self->frames)) : NULL;
@@ -83,9 +63,9 @@ PyObject* opentlv_python_tree_writer_create(PyObject* module, PyObject* args) {
         release_writer(self);
         return PyErr_NoMemory();
     }
-    code = tlv_tree_writer_init(&self->writer, self->data, (size_t)size, &self->format,
-                                self->frames, (size_t)frames, self->scratch, (size_t)scratch,
-                                (size_t)depth, (size_t)count);
+    tlv_result_t code = tlv_tree_writer_init(&self->writer, self->data, (size_t)size, &self->format,
+                                             self->frames, (size_t)frames, self->scratch,
+                                             (size_t)scratch, (size_t)depth, (size_t)count);
     if (code != TLV_OK) {
         release_writer(self);
         opentlv_python_raise_writer(code, NULL);

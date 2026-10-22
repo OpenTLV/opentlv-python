@@ -18,6 +18,7 @@ PyObject*           opentlv_python_builder_consume(PyObject*, PyObject*);
 PyObject*           opentlv_python_source_preserve(PyObject*, PyObject*);
 void      opentlv_python_raise_reader(tlv_result_t code, const tlv_reader_diagnostic_t* diagnostic);
 void      opentlv_python_raise_result(tlv_result_t code);
+PyObject* opentlv_python_format_decode(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_create(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_event(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_next(PyObject*, PyObject*);

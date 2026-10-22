@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+from opentlv.format_operations import FormatOperations
 
-class FixedFormat:
+
+class FixedFormat(FormatOperations):
     """A runtime-configurable fixed-width TLV format: independent tag width,
     length width (1 to 8 bytes) and length byte order.
 
@@ -34,6 +36,9 @@ class FixedFormat:
         self.tag_size = tag_size
         self.length_size = length_size
         self.big_endian = byte_order == "big"
+
+    def _native_format(self):
+        return (self.tag_size, self.length_size, self.big_endian)
 
     def __repr__(self) -> str:
         order = "big" if self.big_endian else "little"

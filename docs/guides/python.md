@@ -5,7 +5,8 @@ for input, expected output and the public API. You can use this guide without
 studying native C implementation contracts.
 
 The `opentlv` package is an experimental Python binding for OpenTLV. It binds
-`Reader`, `Writer`, `Document`/`Node`, `Element`, `Tag`, `Format`,
+`Reader`, `Writer`, `Document`/`Node`, `Element`, `Tag`, `Format` (including
+[custom composed formats](#custom-formats)),
 `LengthSchema`/`StructureSchema` and the `OpenTLVError` exception hierarchy,
 plus a narrow `codec` submodule (see [Codec](#codec)). For layout and build
 details, see [Python bindings](../development/python.md).
@@ -70,7 +71,8 @@ alive across Reader destruction and input replacement. `Reader(data)` uses
 another wire format, for example `opentlv.Reader(data, opentlv.Format.BER)`,
 or an `opentlv.FixedFormat(tag_size, length_size, byte_order="big")` for a
 runtime-configurable fixed-width tag and length (equivalent to the C
-`tlv_fixed_format_t`).
+`tlv_fixed_format_t`). [Custom formats](#custom-formats) are composed from
+the generic field encodings.
 
 Runnable version, parsing a nested BER document and handling truncated
 input:
@@ -104,6 +106,50 @@ builds a nested BER document bottom-up (`python examples/write.py`);
 [writer.py](../../examples/writer.py)
 shows the growable buffer handling a value far larger than its initial
 capacity, and a genuine format error (`python examples/writer.py`).
+
+## Custom formats
+
+`Format.fields(tag, length, ...)` composes a Format from one identifier
+encoding and one length encoding, without writing C. The encodings mirror
+`tlv/field/*.h`: `FixedIdentifier`, `VariableIdentifier` (with an optional
+`IdentifierPolicy`), `FixedLength`, `VariableLength` (with an optional
+`LengthPolicy`) and `EscapedLength`. `element_order="ltv"` places the length
+first, `length_scope="tag_and_value"` counts the identifier too, `tag_only=`
+lists identifiers without Length and Value, and `constructed=ConstructedBit(...)`
+classifies nesting; without it every Value is opaque. `Format.variable()` and
+`Format.escaped()` are the same composition restricted to variable or escaped
+encodings, and `Format.packed(header_size=..., tag=PackedField(...),
+length=PackedField(...))` packs Tag and Length bits into one header integer.
+
+```python
+import opentlv
+
+# One-byte tag; length below 0xFF inline, otherwise 0xFF and two bytes.
+format = opentlv.Format.escaped(
+    opentlv.FixedIdentifier(1), opentlv.EscapedLength(0xFF, 2),
+    constructed=opentlv.ConstructedBit(0, 0x80, 0x80))
+wire = format.encode(b"\x01", b"Hello")
+document = opentlv.Document(wire, format)
+```
+
+The binding passes the configuration to Core's own compositions, which
+validate it and raise `InvalidArgError` for an invalid one; Python only checks
+types and ranges. The result is a `ComposedFormat` usable anywhere a builtin
+Format is: Reader, TreeReader, Writer, TreeWriter, Document, Query and schemas.
+Equal configurations return the same object while it is alive, so a Query
+compiled with one is compatible with a Document parsed with another.
+
+Every Format, builtin, `FixedFormat` or composed, also exposes the C
+`tlv_format_t` operations directly: `decode(data)` returns a `Decoded` for one
+element, `measure(tag, value)` an `Encoding` of header, value, trailer and
+total sizes, `encode(tag, value)` the encoded bytes, and `can_read`/`can_write`
+the descriptor's capabilities. Their errors carry the Format's own detail in
+`operation`, `region`, `offset`, `required` and the tag, length and value offsets.
+
+Runnable version, a proprietary format through Tree Writer, Reader, Document
+and Query:
+[compose.py](../../examples/compose.py)
+(`python examples/compose.py`).
 
 ## Validating
 
@@ -316,7 +362,7 @@ Call `consume()` until a Document is returned; `NeedMoreDataError` permits
 unfinished build. Active builders prevent other cursor traversal operations.
 
 `Document.encode(format)` and `Node.encode(format)` support conversion to a
-compatible builtin destination Format without changing the stored tree.
+compatible destination Format without changing the stored tree.
 `encoded_size_as(format)` measures the same destination encoding.
 
 ## Compiled Query
@@ -328,10 +374,10 @@ same-release image using its original options; `image()`, `format()` and
 Declarations accept `int`, `bytes` and `str`; bind actual values through an
 independent execution rather than interpolating Query text.
 
-All existing Formats, including configured `FixedFormat`, work with Query,
-Reader and Document. Compilation snapshots Fixed widths and byte order;
-equivalent configurations share an owned immutable native context. Different
-configurations remain incompatible. `tags=QueryTagAdapter(id, class_of=...,
+All Formats, including configured `FixedFormat` and composed formats, work
+with Query, Reader and Document. Compilation snapshots Fixed widths and byte
+order; equivalent Fixed or composed configurations share an owned immutable
+native context. Different configurations remain incompatible. `tags=QueryTagAdapter(id, class_of=...,
 number_of=...)` supplies optional semantic Tag callbacks receiving owned raw
 bytes and returning signed 64-bit integers. The stable nonzero ID participates
 in image compatibility; missing capabilities are rejected during compilation.

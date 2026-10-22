@@ -87,7 +87,7 @@ the extension, but the matrix does not claim testing one identical wheel across
 all interpreter versions. Hosted runner architectures are recorded in evidence;
 these checks are not a manylinux/macOS deployment-target or publication policy.
 
-The initial inventory is 299 pytest cases, eight examples and 171 shared Query
+The inventory is 323 pytest cases, nine examples and 171 shared Query
 fixtures / 664 checks. Intentional changes to tests or the pinned Core corpus
 must update this inventory with reviewed evidence. Skips, failures, empty suites
 and contradictory JUnit counts are rejected.
@@ -129,13 +129,16 @@ desired Bash executable and run `tests/ci/test_shell.py` with pytest.
 
 The native migration has documented analyzer false positives in
 [`static-analysis-baseline.json`](../cmake/static-analysis-baseline.json).
-Only the affected checkers in `module.c` and `writer.c` are excluded; cppcheck's
-two `Py_RETURN_NONE` reports are suppressed at their exact lines. The exclusions
+Only the affected checkers in `module.c` are excluded; cppcheck's two
+`Py_RETURN_NONE` reports are suppressed at their exact lines. The exclusions
 require the exact reviewed SHA-256 of each source file. Any source change fails
 until those exceptions are reassessed, so they cannot silently hide new code.
 Pointer-sized allocations of `PyObject*` arrays are explicitly permitted by
 clang-tidy's sizeof policy. The #4 binding-version change in `module.c` has a
 reassessed hash; the suppressed paths, checkers and line numbers are unchanged.
+For #20, format specifications moved the suppressed `module.c` lines and
+removed the `writer.c` fixed-format initialization whose analyzer false
+positive needed an exception; clang-tidy 18 passes `writer.c` without one.
 
 ## Core API coverage
 
