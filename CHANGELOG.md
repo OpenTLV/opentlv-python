@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Report pinned Core API coverage in PR and Full CI as a non-blocking job: `TLV_API` functions and data referenced from `native/` and `src/`, in total and per header, for core and builtins separately; added and removed symbols when a pull request changes the Core pin; and a documented ignore list for primitives and diagnostic producers in `cmake/api-coverage.json`. The script uses only the standard library and can be reused by other bindings. (#19)
 - Optionally publish verified candidates as GitHub releases and notify Docs with exact published-release evidence; keep package-index publication disabled. (OpenTLV/opentlv-docs#42)
 - Notify the documentation portal after successful Main CI documentation changes, with exact source identity, isolated dispatch credentials and regression coverage. (#13)
 - Add Python package version/Core compatibility policy, validated CI distribution artifacts, and manual release preparation with checksums and provenance; keep publication disabled. (#4)
