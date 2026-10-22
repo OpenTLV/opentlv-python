@@ -7,8 +7,7 @@ from enum import IntEnum
 import _opentlv as _native
 from opentlv.element import Element
 from opentlv.error import _from_native
-from opentlv.fixed_format import FixedFormat
-from opentlv.format import _resolve_format
+from opentlv.format import _format_specification, _resolve_format
 from opentlv.tag import Tag
 
 
@@ -59,6 +58,22 @@ class Decoded:
         return bytes(output)
 
 
+def _decoded(data: bytes, result) -> Decoded:
+    """Project a native (tag, start, size, ranges, source) result over `data`."""
+    tag, start, size, ranges, source = result
+    encoded = memoryview(data)[start:start + size]
+    layout = Layout(*ranges)
+
+    def field(location):
+        if location is None:
+            return encoded[:0]
+        begin, length = location
+        return encoded[begin:begin + length]
+
+    element = Element(Tag(tag), field(layout.value), field(layout.length))
+    return Decoded(element, encoded, layout, source)
+
+
 @dataclass(frozen=True)
 class TreeItem:
     """Complete preorder item; views retain their backing bytes independently."""
@@ -97,14 +112,10 @@ class _Cursor:
                  frame_capacity=64, max_depth=64, max_elements=65536):
         self._data = data if isinstance(data, bytes) else bytes(memoryview(data))
         self._format = _resolve_format(format)
-        fixed = isinstance(self._format, FixedFormat)
         try:
             self._capsule = _native.cursor_create(
-                self._data, -1 if fixed else self._format, final_input, nested,
-                frame_capacity, max_depth, max_elements,
-                self._format.tag_size if fixed else 0,
-                self._format.length_size if fixed else 0,
-                self._format.big_endian if fixed else True)
+                self._data, _format_specification(self._format), final_input, nested,
+                frame_capacity, max_depth, max_elements)
         except _native.Error as error:
             raise _from_native(error) from None
 
@@ -156,18 +167,8 @@ class _Cursor:
         return self._decode_item(result)
 
     def _decode_item(self, result):
-        tag, start, size, ranges, depth, offset, constructed, source = result
-        encoded = memoryview(self._data)[start:start + size]
-        layout = Layout(*ranges)
-
-        def field(location):
-            if location is None:
-                return encoded[:0]
-            begin, length = location
-            return encoded[begin:begin + length]
-
-        element = Element(Tag(tag), field(layout.value), field(layout.length))
-        return TreeItem(Decoded(element, encoded, layout, source), depth, offset, bool(constructed))
+        decoded, depth, offset, constructed = result
+        return TreeItem(_decoded(self._data, decoded), depth, offset, bool(constructed))
 
     def _visit(self, callback, nested):
         def adapter(tag, value, depth, offset):

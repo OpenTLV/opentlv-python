@@ -19,7 +19,6 @@
 #if OPENTLV_EMV
 #include <tlv/builtins/emv/emv_codec.h>
 #endif
-#include <tlv/formats/fixed.h>
 #include <tlv/codec/codec.h>
 #include <tlv/codec/number.h>
 #include <tlv/document/document.h>
@@ -647,6 +646,45 @@ static PyObject* schema_diagnostic_report(const Py_buffer* buffer, const tlv_for
     return result;
 }
 
+/* Validates or reports with a resolved descriptor; the caller owns buffer. */
+static PyObject* structure_validate(const Py_buffer* buffer, const tlv_format_t* format,
+                                    PyObject* schema_obj, Py_ssize_t max_depth,
+                                    Py_ssize_t max_elements, int report, Py_ssize_t report_capacity,
+                                    int unknown) {
+    if (max_depth < 0 || max_elements < 0) {
+        PyErr_SetString(PyExc_ValueError, "max_depth and max_elements must not be negative");
+        return NULL;
+    }
+    if (report && (report_capacity < 0 ||
+                   (size_t)report_capacity > SIZE_MAX / sizeof(tlv_schema_diagnostic_t))) {
+        PyErr_SetString(PyExc_ValueError, "invalid report capacity");
+        return NULL;
+    }
+
+    tlv_structure_schema_t* schema = build_structure_schema(schema_obj);
+    if (schema == NULL) {
+        return NULL;
+    }
+
+    tlv_schema_diagnostic_t diagnostic;
+    if (report) {
+        PyObject* result = schema_diagnostic_report(buffer, format, schema, (size_t)max_depth,
+                                                    (size_t)max_elements, (size_t)report_capacity,
+                                                    (tlv_schema_unknown_policy_t)unknown);
+        free_structure_schema(schema);
+        return result;
+    }
+    tlv_result_t code =
+        tlv_schema_validate((const uint8_t*)buffer->buf, (size_t)buffer->len, format, schema,
+                            (size_t)max_depth, (size_t)max_elements, &diagnostic);
+    free_structure_schema(schema);
+    if (code != TLV_OK) {
+        raise_schema_error(code, &diagnostic);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
 /* structure_validate(data, format, schema, max_depth, max_elements) -> None
  *
  * Validates `data` against `schema` (an opentlv.StructureSchema serialized
@@ -665,86 +703,15 @@ static PyObject* _opentlv_structure_validate(PyObject* module, PyObject* args) {
                           &max_elements, &report_capacity, &unknown)) {
         return NULL;
     }
-    tlv_fixed_format_t  fixed;
-    tlv_format_t        descriptor;
-    const tlv_format_t* format = NULL;
-    if (PyTuple_Check(format_obj)) {
-        Py_ssize_t tag_size, length_size;
-        int        big_endian;
-        if (!PyArg_ParseTuple(format_obj, "nnp", &tag_size, &length_size, &big_endian)) {
-            PyBuffer_Release(&buffer);
-            return NULL;
-        }
-        if (tag_size < 0 || length_size < 0) {
-            PyBuffer_Release(&buffer);
-            PyErr_SetString(PyExc_ValueError, "negative format width");
-            return NULL;
-        }
-        fixed.identifier.size = (size_t)tag_size;
-        fixed.length.size = (size_t)length_size;
-        fixed.length.byte_order =
-            big_endian ? TLV_BYTE_ORDER_BIG_ENDIAN : TLV_BYTE_ORDER_LITTLE_ENDIAN;
-        fixed.element_order = TLV_ELEMENT_ORDER_TLV;
-        fixed.length_scope = TLV_LENGTH_SCOPE_VALUE;
-        tlv_result_t rc = tlv_fixed_format_init(&descriptor, &fixed);
-        if (rc != TLV_OK) {
-            PyBuffer_Release(&buffer);
-            raise_code_only(rc);
-            return NULL;
-        }
-        format = &descriptor;
-    } else {
-        long format_id = PyLong_AsLong(format_obj);
-        if (PyErr_Occurred()) {
-            PyBuffer_Release(&buffer);
-            return NULL;
-        }
-        if (format_id >= 0 && format_id <= INT_MAX)
-            format = opentlv_python_format_for((int)format_id);
-    }
-    if (format == NULL) {
-        PyBuffer_Release(&buffer);
-        PyErr_SetString(PyExc_ValueError, "unknown format");
-        return NULL;
-    }
-    if (max_depth < 0 || max_elements < 0) {
-        PyBuffer_Release(&buffer);
-        PyErr_SetString(PyExc_ValueError, "max_depth and max_elements must not be negative");
-        return NULL;
-    }
-    if (PyTuple_Size(args) > 5 &&
-        (report_capacity < 0 ||
-         (size_t)report_capacity > SIZE_MAX / sizeof(tlv_schema_diagnostic_t))) {
-        PyBuffer_Release(&buffer);
-        PyErr_SetString(PyExc_ValueError, "invalid report capacity");
-        return NULL;
-    }
-
-    tlv_structure_schema_t* schema = build_structure_schema(schema_obj);
-    if (schema == NULL) {
-        PyBuffer_Release(&buffer);
-        return NULL;
-    }
-
-    tlv_schema_diagnostic_t diagnostic;
-    if (report_capacity >= 0) {
-        PyObject* result = schema_diagnostic_report(&buffer, format, schema, (size_t)max_depth,
-                                                    (size_t)max_elements, (size_t)report_capacity,
-                                                    (tlv_schema_unknown_policy_t)unknown);
-        free_structure_schema(schema);
-        PyBuffer_Release(&buffer);
-        return result;
-    }
-    tlv_result_t code =
-        tlv_schema_validate((const uint8_t*)buffer.buf, (size_t)buffer.len, format, schema,
-                            (size_t)max_depth, (size_t)max_elements, &diagnostic);
-    free_structure_schema(schema);
+    PyObject*           owner;
+    const tlv_format_t* format = opentlv_python_format_resolve(format_obj, &owner);
+    PyObject*           result =
+        format ? structure_validate(&buffer, format, schema_obj, max_depth, max_elements,
+                                    PyTuple_Size(args) > 5, report_capacity, unknown)
+               : NULL;
+    Py_XDECREF(owner);
     PyBuffer_Release(&buffer);
-    if (code != TLV_OK) {
-        raise_schema_error(code, &diagnostic);
-        return NULL;
-    }
-    Py_RETURN_NONE;
+    return result;
 }
 
 static PyObject* codec_detail_value(const tlv_diagnostic_t*   common,
@@ -1227,22 +1194,19 @@ static PyObject* _opentlv_document_insert(PyObject* module, PyObject* args) {
     return node_to_py(node);
 }
 
-static PyObject* _opentlv_document_encoded_size(PyObject* module, PyObject* args) {
-    (void)module;
-    int       format_id = -1;
-    PyObject* capsule;
-    if (!PyArg_ParseTuple(args, "O|i", &capsule, &format_id)) {
-        return NULL;
-    }
-    tlv_document_t* document = document_from_capsule(capsule);
-    if (document == NULL) {
-        return NULL;
-    }
-    const tlv_format_t* destination = format_id == -1 ? NULL : opentlv_python_format_for(format_id);
-    if (format_id != -1 && !destination) {
-        PyErr_SetString(PyExc_ValueError, "unsupported destination Format");
-        return NULL;
-    }
+/* Optional destination descriptor kept alive by *owner; None selects the
+ * source Format. Returns 0 with an exception set. */
+static int destination_format(PyObject* specification, PyObject** owner,
+                              const tlv_format_t** format) {
+    *owner = NULL;
+    *format = NULL;
+    if (specification == Py_None) return 1;
+    *format = opentlv_python_format_resolve(specification, owner);
+    return *format != NULL;
+}
+
+static PyObject* document_encoded_size_as(tlv_document_t*     document,
+                                          const tlv_format_t* destination) {
     size_t       size = 0;
     tlv_result_t code = (destination ? tlv_document_encoded_size_as(document, destination, &size)
                                      : tlv_document_encoded_size(document, &size));
@@ -1253,22 +1217,26 @@ static PyObject* _opentlv_document_encoded_size(PyObject* module, PyObject* args
     return PyLong_FromSize_t(size);
 }
 
-static PyObject* _opentlv_document_encode(PyObject* module, PyObject* args) {
+static PyObject* _opentlv_document_encoded_size(PyObject* module, PyObject* args) {
     (void)module;
-    int       format_id = -1;
+    PyObject* specification = Py_None;
     PyObject* capsule;
-    if (!PyArg_ParseTuple(args, "O|i", &capsule, &format_id)) {
+    if (!PyArg_ParseTuple(args, "O|O", &capsule, &specification)) {
         return NULL;
     }
     tlv_document_t* document = document_from_capsule(capsule);
     if (document == NULL) {
         return NULL;
     }
-    const tlv_format_t* destination = format_id == -1 ? NULL : opentlv_python_format_for(format_id);
-    if (format_id != -1 && !destination) {
-        PyErr_SetString(PyExc_ValueError, "unsupported destination Format");
-        return NULL;
-    }
+    PyObject*           owner;
+    const tlv_format_t* destination;
+    if (!destination_format(specification, &owner, &destination)) return NULL;
+    PyObject* result = document_encoded_size_as(document, destination);
+    Py_XDECREF(owner);
+    return result;
+}
+
+static PyObject* document_encode_as(tlv_document_t* document, const tlv_format_t* destination) {
     size_t       size = 0;
     tlv_result_t code = (destination ? tlv_document_encoded_size_as(document, destination, &size)
                                      : tlv_document_encoded_size(document, &size));
@@ -1300,6 +1268,25 @@ static PyObject* _opentlv_document_encode(PyObject* module, PyObject* args) {
                                             "tlv_document_encoded_size reported");
         return NULL;
     }
+    return result;
+}
+
+static PyObject* _opentlv_document_encode(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject* specification = Py_None;
+    PyObject* capsule;
+    if (!PyArg_ParseTuple(args, "O|O", &capsule, &specification)) {
+        return NULL;
+    }
+    tlv_document_t* document = document_from_capsule(capsule);
+    if (document == NULL) {
+        return NULL;
+    }
+    PyObject*           owner;
+    const tlv_format_t* destination;
+    if (!destination_format(specification, &owner, &destination)) return NULL;
+    PyObject* result = document_encode_as(document, destination);
+    Py_XDECREF(owner);
     return result;
 }
 
@@ -1396,18 +1383,7 @@ static PyObject* _opentlv_node_erase(PyObject* module, PyObject* args) {
     Py_RETURN_NONE;
 }
 
-static PyObject* _opentlv_node_encoded_size(PyObject* module, PyObject* args) {
-    (void)module;
-    int         format_id = -1;
-    tlv_node_t* node;
-    if (!PyArg_ParseTuple(args, "O&|i", py_to_node, &node, &format_id)) {
-        return NULL;
-    }
-    const tlv_format_t* destination = format_id == -1 ? NULL : opentlv_python_format_for(format_id);
-    if (format_id != -1 && !destination) {
-        PyErr_SetString(PyExc_ValueError, "unsupported destination Format");
-        return NULL;
-    }
+static PyObject* node_encoded_size_as(tlv_node_t* node, const tlv_format_t* destination) {
     size_t       size = 0;
     tlv_result_t code = (destination ? tlv_node_encoded_size_as(node, destination, &size)
                                      : tlv_node_encoded_size(node, &size));
@@ -1418,18 +1394,22 @@ static PyObject* _opentlv_node_encoded_size(PyObject* module, PyObject* args) {
     return PyLong_FromSize_t(size);
 }
 
-static PyObject* _opentlv_node_encode(PyObject* module, PyObject* args) {
+static PyObject* _opentlv_node_encoded_size(PyObject* module, PyObject* args) {
     (void)module;
-    int         format_id = -1;
+    PyObject*   specification = Py_None;
     tlv_node_t* node;
-    if (!PyArg_ParseTuple(args, "O&|i", py_to_node, &node, &format_id)) {
+    if (!PyArg_ParseTuple(args, "O&|O", py_to_node, &node, &specification)) {
         return NULL;
     }
-    const tlv_format_t* destination = format_id == -1 ? NULL : opentlv_python_format_for(format_id);
-    if (format_id != -1 && !destination) {
-        PyErr_SetString(PyExc_ValueError, "unsupported destination Format");
-        return NULL;
-    }
+    PyObject*           owner;
+    const tlv_format_t* destination;
+    if (!destination_format(specification, &owner, &destination)) return NULL;
+    PyObject* result = node_encoded_size_as(node, destination);
+    Py_XDECREF(owner);
+    return result;
+}
+
+static PyObject* node_encode_as(tlv_node_t* node, const tlv_format_t* destination) {
     size_t       size = 0;
     tlv_result_t code = (destination ? tlv_node_encoded_size_as(node, destination, &size)
                                      : tlv_node_encoded_size(node, &size));
@@ -1464,6 +1444,21 @@ static PyObject* _opentlv_node_encode(PyObject* module, PyObject* args) {
     return result;
 }
 
+static PyObject* _opentlv_node_encode(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject*   specification = Py_None;
+    tlv_node_t* node;
+    if (!PyArg_ParseTuple(args, "O&|O", py_to_node, &node, &specification)) {
+        return NULL;
+    }
+    PyObject*           owner;
+    const tlv_format_t* destination;
+    if (!destination_format(specification, &owner, &destination)) return NULL;
+    PyObject* result = node_encode_as(node, destination);
+    Py_XDECREF(owner);
+    return result;
+}
+
 /* read(data, offset, format) -> (tag: bytes, length_offset: int, length_size: int, value_offset:
  * int, value_length: int, consumed: int)
  *
@@ -1476,17 +1471,18 @@ static PyObject* _opentlv_read(PyObject* module, PyObject* args) {
     (void)module;
     Py_buffer  buffer;
     Py_ssize_t offset;
-    int        format_id;
-    if (!PyArg_ParseTuple(args, "y*ni", &buffer, &offset, &format_id)) {
+    PyObject*  specification;
+    if (!PyArg_ParseTuple(args, "y*nO", &buffer, &offset, &specification)) {
         return NULL;
     }
-    const tlv_format_t* format = opentlv_python_format_for(format_id);
+    PyObject*           owner;
+    const tlv_format_t* format = opentlv_python_format_resolve(specification, &owner);
     if (format == NULL) {
         PyBuffer_Release(&buffer);
-        PyErr_SetString(PyExc_ValueError, "unknown format");
         return NULL;
     }
     if (offset < 0 || offset > buffer.len) {
+        Py_DECREF(owner);
         PyBuffer_Release(&buffer);
         PyErr_SetString(PyExc_ValueError, "offset is out of range for data");
         return NULL;
@@ -1504,6 +1500,7 @@ static PyObject* _opentlv_read(PyObject* module, PyObject* args) {
         tlv_read_source_diag(base + offset, size, format, &element, &consumed, &source, &diag);
     if (code != TLV_OK) {
         raise_reader_error(code, &diag);
+        Py_DECREF(owner);
         PyBuffer_Release(&buffer);
         return NULL;
     }
@@ -1511,6 +1508,7 @@ static PyObject* _opentlv_read(PyObject* module, PyObject* args) {
     size_t value_length = 0;
     code = tlv_size_to_native(element.value.size, &value_length);
     if (code != TLV_OK) {
+        Py_DECREF(owner);
         PyBuffer_Release(&buffer);
         raise_code_only(code);
         return NULL;
@@ -1522,6 +1520,7 @@ static PyObject* _opentlv_read(PyObject* module, PyObject* args) {
         source.length.size ? (Py_ssize_t)(source.data + source.length.offset - base) : 0;
     PyObject* tag_obj =
         PyBytes_FromStringAndSize((const char*)element.tag.data, (Py_ssize_t)element.tag.size);
+    Py_DECREF(owner);
     PyBuffer_Release(&buffer);
     if (tag_obj == NULL) {
         return NULL;
@@ -1574,23 +1573,19 @@ static PyObject* _opentlv_write(PyObject* module, PyObject* args) {
     (void)module;
     Py_buffer  buffer, tag_buf, value_buf;
     Py_ssize_t offset;
-    int        format_id;
-    if (!PyArg_ParseTuple(args, "w*ny*y*i", &buffer, &offset, &tag_buf, &value_buf, &format_id)) {
+    PyObject*  specification;
+    if (!PyArg_ParseTuple(args, "w*ny*y*O", &buffer, &offset, &tag_buf, &value_buf,
+                          &specification)) {
         return NULL;
     }
-    const tlv_format_t* format = opentlv_python_format_for(format_id);
-    if (format == NULL) {
+    PyObject*           owner;
+    const tlv_format_t* format = opentlv_python_format_resolve(specification, &owner);
+    if (format == NULL || offset < 0 || offset > buffer.len) {
+        Py_XDECREF(owner);
         PyBuffer_Release(&buffer);
         PyBuffer_Release(&tag_buf);
         PyBuffer_Release(&value_buf);
-        PyErr_SetString(PyExc_ValueError, "unknown format");
-        return NULL;
-    }
-    if (offset < 0 || offset > buffer.len) {
-        PyBuffer_Release(&buffer);
-        PyBuffer_Release(&tag_buf);
-        PyBuffer_Release(&value_buf);
-        PyErr_SetString(PyExc_ValueError, "offset is out of range for buffer");
+        if (format != NULL) PyErr_SetString(PyExc_ValueError, "offset is out of range for buffer");
         return NULL;
     }
 
@@ -1603,14 +1598,15 @@ static PyObject* _opentlv_write(PyObject* module, PyObject* args) {
 
     tlv_result_t code = tlv_write_diag(dest, capacity, format, tag, (const uint8_t*)value_buf.buf,
                                        (size_t)value_buf.len, &written, &diag);
-    PyBuffer_Release(&tag_buf);
-    PyBuffer_Release(&value_buf);
-    PyBuffer_Release(&buffer);
     if (code != TLV_OK) {
         tlv_location_translate(&diag.diagnostic.location, (size_t)offset);
         raise_writer_error(code, &diag);
-        return NULL;
     }
+    Py_DECREF(owner);
+    PyBuffer_Release(&tag_buf);
+    PyBuffer_Release(&value_buf);
+    PyBuffer_Release(&buffer);
+    if (code != TLV_OK) return NULL;
     return PyLong_FromSize_t(written);
 }
 
@@ -1623,25 +1619,23 @@ static PyObject* _opentlv_encoded_size(PyObject* module, PyObject* args) {
     (void)module;
     Py_buffer  tag_buf;
     Py_ssize_t value_length;
-    int        format_id;
-    if (!PyArg_ParseTuple(args, "y*ni", &tag_buf, &value_length, &format_id)) {
+    PyObject*  specification;
+    if (!PyArg_ParseTuple(args, "y*nO", &tag_buf, &value_length, &specification)) {
         return NULL;
     }
-    const tlv_format_t* format = opentlv_python_format_for(format_id);
-    if (format == NULL) {
+    PyObject*           owner;
+    const tlv_format_t* format = opentlv_python_format_resolve(specification, &owner);
+    if (format == NULL || value_length < 0) {
+        Py_XDECREF(owner);
         PyBuffer_Release(&tag_buf);
-        PyErr_SetString(PyExc_ValueError, "unknown format");
-        return NULL;
-    }
-    if (value_length < 0) {
-        PyBuffer_Release(&tag_buf);
-        PyErr_SetString(PyExc_ValueError, "value_length must not be negative");
+        if (format != NULL) PyErr_SetString(PyExc_ValueError, "value_length must not be negative");
         return NULL;
     }
 
     tlv_tag_t    tag = tlv_tag((const uint8_t*)tag_buf.buf, (size_t)tag_buf.len);
     size_t       size = 0;
     tlv_result_t code = tlv_encoded_size(tag, (size_t)value_length, format, &size);
+    Py_DECREF(owner);
     PyBuffer_Release(&tag_buf);
     if (code != TLV_OK) {
         raise_code_only(code);
@@ -1653,16 +1647,15 @@ static PyObject* _opentlv_encoded_size(PyObject* module, PyObject* args) {
 static PyObject* _opentlv_element_encoded_size(PyObject* module, PyObject* args) {
     (void)module;
     Py_buffer tag_buf, value_buf;
-
-    int format_id;
-    if (!PyArg_ParseTuple(args, "y*y*i", &tag_buf, &value_buf, &format_id)) {
+    PyObject* specification;
+    if (!PyArg_ParseTuple(args, "y*y*O", &tag_buf, &value_buf, &specification)) {
         return NULL;
     }
-    const tlv_format_t* format = opentlv_python_format_for(format_id);
+    PyObject*           owner;
+    const tlv_format_t* format = opentlv_python_format_resolve(specification, &owner);
     if (format == NULL) {
         PyBuffer_Release(&tag_buf);
         PyBuffer_Release(&value_buf);
-        PyErr_SetString(PyExc_ValueError, "unknown format");
         return NULL;
     }
 
@@ -1672,238 +1665,7 @@ static PyObject* _opentlv_element_encoded_size(PyObject* module, PyObject* args)
     tlv_writer_diagnostic_t diag;
     tlv_result_t            code = tlv_element_encoded_size_diag(&element, format, &size, &diag);
     if (code != TLV_OK) raise_writer_error(code, &diag);
-    PyBuffer_Release(&tag_buf);
-    PyBuffer_Release(&value_buf);
-    if (code != TLV_OK) return NULL;
-    return PyLong_FromSize_t(size);
-}
-
-/* Builds and validates a tlv_fixed_format_t from Python-parsed arguments.
- * Returns 1 on success; on failure a ValueError is set and *out is unusable. */
-static int fixed_config_from_args(Py_ssize_t tag_size, Py_ssize_t length_size, int big_endian,
-                                  tlv_fixed_format_t* out) {
-    if (tag_size < 1) {
-        PyErr_SetString(PyExc_ValueError, "tag_size must be at least 1");
-        return 0;
-    }
-    if (length_size < 1 || length_size > 8) {
-        PyErr_SetString(PyExc_ValueError, "length_size must be between 1 and 8");
-        return 0;
-    }
-    out->identifier.size = (size_t)tag_size;
-    out->length.size = (size_t)length_size;
-    out->length.byte_order = big_endian ? TLV_BYTE_ORDER_BIG_ENDIAN : TLV_BYTE_ORDER_LITTLE_ENDIAN;
-    out->element_order = TLV_ELEMENT_ORDER_TLV;
-    out->length_scope = TLV_LENGTH_SCOPE_VALUE;
-    return 1;
-}
-
-/* read_fixed(data, offset, tag_size, length_size, big_endian)
- *     -> (tag: bytes, length_offset: int, length_size: int, value_offset: int, value_length: int,
- * consumed: int)
- *
- * Like read(), but for the configurable fixed-width format: tag_size and
- * length_size are byte widths (length_size 1..8), and big_endian selects the
- * length field's byte order. Raises _opentlv.Error on failure. */
-static PyObject* _opentlv_read_fixed(PyObject* module, PyObject* args) {
-    (void)module;
-    Py_buffer  buffer;
-    Py_ssize_t offset, tag_size, length_size;
-    int        big_endian;
-    if (!PyArg_ParseTuple(args, "y*nnnp", &buffer, &offset, &tag_size, &length_size, &big_endian)) {
-        return NULL;
-    }
-    tlv_fixed_format_t config;
-    if (!fixed_config_from_args(tag_size, length_size, big_endian, &config)) {
-        PyBuffer_Release(&buffer);
-        return NULL;
-    }
-    tlv_format_t format;
-    tlv_result_t init_code = tlv_fixed_format_init(&format, &config);
-    if (init_code != TLV_OK) {
-        PyBuffer_Release(&buffer);
-        raise_code_only(init_code);
-        return NULL;
-    }
-    if (offset < 0 || offset > buffer.len) {
-        PyBuffer_Release(&buffer);
-        PyErr_SetString(PyExc_ValueError, "offset is out of range for data");
-        return NULL;
-    }
-
-    const uint8_t*          base = (const uint8_t*)buffer.buf;
-    size_t                  size = (size_t)(buffer.len - offset);
-    tlv_element_t           element;
-    size_t                  consumed = 0;
-    tlv_reader_diagnostic_t diag;
-    tlv_reader_diagnostic_init(&diag);
-
-    tlv_source_t source;
-    tlv_result_t code =
-        tlv_read_source_diag(base + offset, size, &format, &element, &consumed, &source, &diag);
-    if (code != TLV_OK) {
-        raise_reader_error(code, &diag);
-        PyBuffer_Release(&buffer);
-        return NULL;
-    }
-
-    size_t value_length = 0;
-    code = tlv_size_to_native(element.value.size, &value_length);
-    if (code != TLV_OK) {
-        PyBuffer_Release(&buffer);
-        raise_code_only(code);
-        return NULL;
-    }
-    Py_ssize_t value_offset =
-        value_length == 0 ? 0 : (Py_ssize_t)((const uint8_t*)element.value.data - base);
-
-    Py_ssize_t length_offset =
-        source.length.size ? (Py_ssize_t)(source.data + source.length.offset - base) : 0;
-    PyObject* tag_obj =
-        PyBytes_FromStringAndSize((const char*)element.tag.data, (Py_ssize_t)element.tag.size);
-    PyBuffer_Release(&buffer);
-    if (tag_obj == NULL) {
-        return NULL;
-    }
-    PyObject* consumed_obj = PyLong_FromSize_t(consumed);
-    if (consumed_obj == NULL) {
-        Py_DECREF(tag_obj);
-        return NULL;
-    }
-
-    return Py_BuildValue("(NnnnnN)", tag_obj, length_offset, (Py_ssize_t)source.length.size,
-                         value_offset, (Py_ssize_t)value_length, consumed_obj);
-}
-
-/* write_fixed(buffer, offset, tag, value, tag_size, length_size, big_endian) -> written: int
- *
- * Like write(), but for the configurable fixed-width format. Raises
- * _opentlv.Error on failure, including insufficient capacity. */
-static PyObject* _opentlv_write_fixed(PyObject* module, PyObject* args) {
-    (void)module;
-    Py_buffer  buffer, tag_buf, value_buf;
-    Py_ssize_t offset, tag_size, length_size;
-    int        big_endian;
-    if (!PyArg_ParseTuple(args, "w*ny*y*nnp", &buffer, &offset, &tag_buf, &value_buf, &tag_size,
-                          &length_size, &big_endian)) {
-        return NULL;
-    }
-    tlv_fixed_format_t config;
-    if (!fixed_config_from_args(tag_size, length_size, big_endian, &config)) {
-        PyBuffer_Release(&buffer);
-        PyBuffer_Release(&tag_buf);
-        PyBuffer_Release(&value_buf);
-        return NULL;
-    }
-    tlv_format_t format;
-    tlv_result_t init_code = tlv_fixed_format_init(&format, &config);
-    if (init_code != TLV_OK) {
-        PyBuffer_Release(&buffer);
-        PyBuffer_Release(&tag_buf);
-        PyBuffer_Release(&value_buf);
-        raise_code_only(init_code);
-        return NULL;
-    }
-    if (offset < 0 || offset > buffer.len) {
-        PyBuffer_Release(&buffer);
-        PyBuffer_Release(&tag_buf);
-        PyBuffer_Release(&value_buf);
-        PyErr_SetString(PyExc_ValueError, "offset is out of range for buffer");
-        return NULL;
-    }
-
-    tlv_tag_t               tag = tlv_tag((const uint8_t*)tag_buf.buf, (size_t)tag_buf.len);
-    uint8_t*                dest = (uint8_t*)buffer.buf + offset;
-    size_t                  capacity = (size_t)(buffer.len - offset);
-    size_t                  written = 0;
-    tlv_writer_diagnostic_t diag;
-    tlv_writer_diagnostic_init(&diag);
-
-    tlv_result_t code = tlv_write_diag(dest, capacity, &format, tag, (const uint8_t*)value_buf.buf,
-                                       (size_t)value_buf.len, &written, &diag);
-    PyBuffer_Release(&tag_buf);
-    PyBuffer_Release(&value_buf);
-    PyBuffer_Release(&buffer);
-    if (code != TLV_OK) {
-        tlv_location_translate(&diag.diagnostic.location, (size_t)offset);
-        raise_writer_error(code, &diag);
-        return NULL;
-    }
-    return PyLong_FromSize_t(written);
-}
-
-/* encoded_size_fixed(tag, value_length, tag_size, length_size, big_endian) -> int
- *
- * Like encoded_size(), but for the configurable fixed-width format. Raises
- * _opentlv.Error on failure. */
-static PyObject* _opentlv_encoded_size_fixed(PyObject* module, PyObject* args) {
-    (void)module;
-    Py_buffer  tag_buf;
-    Py_ssize_t value_length, tag_size, length_size;
-    int        big_endian;
-    if (!PyArg_ParseTuple(args, "y*nnnp", &tag_buf, &value_length, &tag_size, &length_size,
-                          &big_endian)) {
-        return NULL;
-    }
-    tlv_fixed_format_t config;
-    if (!fixed_config_from_args(tag_size, length_size, big_endian, &config)) {
-        PyBuffer_Release(&tag_buf);
-        return NULL;
-    }
-    tlv_format_t format;
-    tlv_result_t init_code = tlv_fixed_format_init(&format, &config);
-    if (init_code != TLV_OK) {
-        PyBuffer_Release(&tag_buf);
-        raise_code_only(init_code);
-        return NULL;
-    }
-    if (value_length < 0) {
-        PyBuffer_Release(&tag_buf);
-        PyErr_SetString(PyExc_ValueError, "value_length must not be negative");
-        return NULL;
-    }
-
-    tlv_tag_t    tag = tlv_tag((const uint8_t*)tag_buf.buf, (size_t)tag_buf.len);
-    size_t       size = 0;
-    tlv_result_t code = tlv_encoded_size(tag, (size_t)value_length, &format, &size);
-    PyBuffer_Release(&tag_buf);
-    if (code != TLV_OK) {
-        raise_code_only(code);
-        return NULL;
-    }
-    return PyLong_FromSize_t(size);
-}
-
-static PyObject* _opentlv_element_encoded_size_fixed(PyObject* module, PyObject* args) {
-    (void)module;
-    Py_buffer  tag_buf, value_buf;
-    Py_ssize_t tag_size, length_size;
-    int        big_endian;
-    if (!PyArg_ParseTuple(args, "y*y*nnp", &tag_buf, &value_buf, &tag_size, &length_size,
-                          &big_endian)) {
-        return NULL;
-    }
-    tlv_fixed_format_t config;
-    if (!fixed_config_from_args(tag_size, length_size, big_endian, &config)) {
-        PyBuffer_Release(&tag_buf);
-        PyBuffer_Release(&value_buf);
-        return NULL;
-    }
-    tlv_format_t format;
-    tlv_result_t init_code = tlv_fixed_format_init(&format, &config);
-    if (init_code != TLV_OK) {
-        PyBuffer_Release(&tag_buf);
-        PyBuffer_Release(&value_buf);
-        raise_code_only(init_code);
-        return NULL;
-    }
-
-    tlv_tag_t           tag = tlv_tag((const uint8_t*)tag_buf.buf, (size_t)tag_buf.len);
-    size_t              size = 0;
-    const tlv_element_t element = {tag, {(const uint8_t*)value_buf.buf, (tlv_size_t)value_buf.len}};
-    tlv_writer_diagnostic_t diag;
-    tlv_result_t            code = tlv_element_encoded_size_diag(&element, &format, &size, &diag);
-    if (code != TLV_OK) raise_writer_error(code, &diag);
+    Py_DECREF(owner);
     PyBuffer_Release(&tag_buf);
     PyBuffer_Release(&value_buf);
     if (code != TLV_OK) return NULL;
@@ -1920,6 +1682,45 @@ void opentlv_python_raise_result(tlv_result_t code) {
 
 void opentlv_python_raise_writer(tlv_result_t code, const tlv_writer_diagnostic_t* diagnostic) {
     raise_writer_error(code, diagnostic);
+}
+
+void opentlv_python_raise_format(tlv_result_t code, const char* operation,
+                                 const tlv_format_error_t* error, const uint8_t* input) {
+    static const char* const regions[] = {"header", "tag", "length", "value", "trailer"};
+    PyObject*                fields = PyDict_New();
+    if (fields == NULL) {
+        return;
+    }
+    /* Decode ranges are relative to the input; measure/encode to would-be output. */
+    tlv_location_t location = {0};
+    int            has_offset = error != NULL && error->has_offset;
+    if (has_offset)
+        location = (tlv_location_t){input ? TLV_LOCATION_INPUT : TLV_LOCATION_OUTPUT,
+                                    TLV_LOCATION_POINT, error->offset, error->offset};
+    tlv_range_t none = {0};
+    tlv_range_t tag = error ? error->tag : none;
+    tlv_range_t length = error ? error->length : none;
+    tlv_range_t value = error ? error->value : none;
+    const char* region = error && (unsigned)error->region < sizeof regions / sizeof *regions
+                             ? regions[error->region]
+                             : NULL;
+    if (dict_set(fields, "code", PyLong_FromLong((long)code)) < 0 ||
+        dict_set_str_or_none(fields, "operation", operation) < 0 ||
+        dict_set_str_or_none(fields, "region", region) < 0 ||
+        dict_set_size_or_none(fields, "offset", has_offset, has_offset ? error->offset : 0) < 0 ||
+        dict_set(fields, "location", opentlv_python_location(&location)) < 0 ||
+        dict_set(fields, "required",
+                 error && error->has_required ? PyLong_FromUnsignedLongLong(error->required)
+                                              : Py_NewRef(Py_None)) < 0 ||
+        dict_set_size_or_none(fields, "tag_offset", tag.present, tag.offset) < 0 ||
+        dict_set_size_or_none(fields, "length_offset", length.present, length.offset) < 0 ||
+        dict_set_size_or_none(fields, "value_offset", value.present, value.offset) < 0 ||
+        dict_set_bytes_or_none(fields, "raw_length", input && length.present,
+                               input ? input + length.offset : NULL, length.size) < 0) {
+        Py_DECREF(fields);
+        return;
+    }
+    raise_error(fields);
 }
 
 static PyObject* diagnostic_name(PyObject* module, PyObject* args) {
@@ -1999,6 +1800,15 @@ static PyMethodDef opentlv_python_methods[] = {
      "Pull a finalized node with native revision checks."},
     {"length_schema", opentlv_python_length_schema, METH_VARARGS,
      "Find or validate a length rule through the canonical C schema engine."},
+    {"format_compose", opentlv_python_format_compose, METH_O,
+     "Compose an owned Format from field encodings or a packed header."},
+    {"format_capabilities", opentlv_python_format_capabilities, METH_O,
+     "Report whether a Format can decode and encode."},
+    {"format_decode", opentlv_python_format_decode, METH_VARARGS,
+     "Decode one complete element with its source ranges."},
+    {"format_measure", opentlv_python_format_measure, METH_VARARGS,
+     "Measure the logical framing of one element."},
+    {"format_encode", opentlv_python_format_encode, METH_VARARGS, "Encode one element."},
     {"source_preserve", opentlv_python_source_preserve, METH_VARARGS,
      "Preserve retained immutable source bytes after C semantic equality checks."},
     {"document_builder_create", opentlv_python_builder_create, METH_VARARGS,
@@ -2044,17 +1854,8 @@ static PyMethodDef opentlv_python_methods[] = {
      "Copy raw bytes into caller storage without format conversion."},
     {"element_encoded_size", _opentlv_element_encoded_size, METH_VARARGS,
      "Measure exact output storage using semantic content."},
-    {"element_encoded_size_fixed", _opentlv_element_encoded_size_fixed, METH_VARARGS,
-     "Measure exact output storage for a fixed format Element."},
     {"encoded_size", _opentlv_encoded_size, METH_VARARGS,
      "Compute the encoded size of an element without writing it."},
-    {"read_fixed", _opentlv_read_fixed, METH_VARARGS,
-     "Parse one element at an offset in a buffer using the configurable fixed-width format."},
-    {"write_fixed", _opentlv_write_fixed, METH_VARARGS,
-     "Encode one element at an offset in a writable buffer using the configurable "
-     "fixed-width format."},
-    {"encoded_size_fixed", _opentlv_encoded_size_fixed, METH_VARARGS,
-     "Compute the encoded size of an element in the configurable fixed-width format."},
     {"structure_validate", _opentlv_structure_validate, METH_VARARGS,
      "Validate a buffer against a serialized structural schema."},
     {"definition_find", _opentlv_definition_find, METH_VARARGS,

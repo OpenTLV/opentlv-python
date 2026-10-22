@@ -11,7 +11,7 @@ from weakref import WeakValueDictionary
 import _opentlv as _native
 
 from opentlv.error import _from_native, InvalidStateError
-from opentlv.format import Format, _resolve_format, _format_specification
+from opentlv.format import Format, _format_specification
 from opentlv.tag import Tag
 from opentlv.cursor import TreeReader
 
@@ -163,16 +163,17 @@ class Node:
             raise _from_native(native_error) from None
 
     def encoded_size_as(self, format: Format) -> int:
-        """Measure this subtree in a compatible destination builtin Format."""
+        """Measure this subtree in a compatible destination Format."""
         try:
-            return _native.node_encoded_size(self._ptr, _resolve_format(format))
+            return _native.node_encoded_size(self._ptr, _format_specification(format))
         except _native.Error as native_error:
             raise _from_native(native_error) from None
 
     def encode(self, format: Format | None = None) -> bytes:
-        """Encode this subtree, optionally using a compatible destination builtin."""
+        """Encode this subtree, optionally using a compatible destination Format."""
         try:
-            return _native.node_encode(self._ptr, -1 if format is None else _resolve_format(format))
+            return _native.node_encode(self._ptr, None if format is None
+                                       else _format_specification(format))
         except _native.Error as native_error:
             raise _from_native(native_error) from None
 
@@ -341,16 +342,17 @@ class Document:
             raise _from_native(native_error) from None
 
     def encoded_size_as(self, format: Format) -> int:
-        """Measure the document in a compatible destination builtin Format."""
+        """Measure the document in a compatible destination Format."""
         try:
-            return _native.document_encoded_size(self._capsule, _resolve_format(format))
+            return _native.document_encoded_size(self._capsule, _format_specification(format))
         except _native.Error as native_error:
             raise _from_native(native_error) from None
 
     def encode(self, format: Format | None = None) -> bytes:
-        """Encode the document, optionally using a compatible destination builtin."""
+        """Encode the document, optionally using a compatible destination Format."""
         try:
-            return _native.document_encode(self._capsule, -1 if format is None else _resolve_format(format))
+            return _native.document_encode(self._capsule, None if format is None
+                                           else _format_specification(format))
         except _native.Error as native_error:
             raise _from_native(native_error) from None
 

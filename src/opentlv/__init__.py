@@ -10,8 +10,8 @@ bindings](https://github.com/marekcingel/OpenTLV/blob/main/docs/concepts/binding
 
 Currently bound: `Reader`, `TreeReader`, `Query`/`QueryMatcher`, Visitors,
 `Writer`, `TreeWriter`, `Document`/`Node`, `DocumentBuilder`, `Element`, `Tag`,
-`Format`, `FixedFormat`, `LengthSchema`/`StructureSchema` and the
-`OpenTLVError` exception hierarchy. The `codec` submodule exposes configured numeric codecs and EMV amounts.
+`Format`, `FixedFormat`, `ComposedFormat` with its field encodings,
+`LengthSchema`/`StructureSchema` and the `OpenTLVError` exception hierarchy. The `codec` submodule exposes configured numeric codecs and EMV amounts.
 Other public C codecs remain a capability gap.
 """
 
@@ -47,8 +47,13 @@ from opentlv.error import (
     ValueOverflowError,
     VisitorError,
 )
+from opentlv.composed_format import ComposedFormat
+from opentlv.field import (ConstructedBit, EscapedLength, FixedIdentifier, FixedLength,
+                           IdentifierPolicy, LengthPolicy, PackedField, VariableIdentifier,
+                           VariableLength)
 from opentlv.fixed_format import FixedFormat
 from opentlv.format import Format
+from opentlv.format_operations import Encoding
 from opentlv.reader import Reader, read
 from opentlv.cursor import Decoded, Layout, TreeItem, TreeEvent, TreeEventKind, TreeReader, Visit
 from opentlv.query import Query, QueryMatcher
@@ -69,6 +74,8 @@ __all__ = [
     "QueryTagAdapter", "QueryDefinitionResolver", "query_emv_resolve",
     "__version__",
     "BufferTooShortError",
+    "ComposedFormat",
+    "ConstructedBit",
     "Document",
     "DocumentBuilder",
     "Element",
@@ -78,9 +85,14 @@ __all__ = [
     "DefinitionRegistry",
     "NumberCodec",
     "NumberEncoding",
+    "Encoding",
     "EndError",
+    "EscapedLength",
     "FixedFormat",
+    "FixedIdentifier",
+    "FixedLength",
     "Format",
+    "IdentifierPolicy",
     "InvalidArgError",
     "InvalidSyntaxError",
     "InvalidLengthError",
@@ -88,6 +100,7 @@ __all__ = [
     "InvalidTagSizeError",
     "InvalidValueError",
     "Kind",
+    "LengthPolicy",
     "LengthRule",
     "LengthSchema",
     "LimitError",
@@ -100,6 +113,7 @@ __all__ = [
     "TruncatedError",
     "OpenTLVError",
     "OutOfMemoryError",
+    "PackedField",
     "Reader",
     "read",
     "Decoded",
@@ -125,6 +139,8 @@ __all__ = [
     "Tag",
     "UnsupportedError",
     "ValueOverflowError",
+    "VariableIdentifier",
+    "VariableLength",
     "VisitorError",
     "Writer",
     "encoded_size",

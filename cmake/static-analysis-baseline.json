@@ -1,14 +1,8 @@
 {
   "native/src/module.c": {
-    "sha256": "4736202e112fe93883e621208247f902cd0b9fc23c6a3d6477f418c837cc77b1",
+    "sha256": "088051f29e9d16869989c41fd5767b84552a056226fa1bcaf3bd6c26af7ceea7",
     "clang-tidy": ["clang-analyzer-optin.core.EnumCastOutOfRange"],
-    "cppcheck": ["missingReturn:746", "missingReturn:1385"],
-    "reason": "Relocated for #10: only the adapter include path changed; suppressed code and line numbers remain unchanged. Reassessed for #4: only the version include, return expression and docstring changed; suppressed paths and line numbers are unchanged. Clang 18 does not model PyErr_SetString/PyErr_Occurred, so it follows an impossible path past kind validation (line 455). Cppcheck 2.13 does not recognize the Py_RETURN_NONE return at lines 747 and 1386."
-  },
-  "native/src/writer.c": {
-    "sha256": "6faedbd2d9b8dd04812eef7a6bc6382583a84ae36c0793cf5ae599af87ec4fca",
-    "clang-tidy": ["clang-analyzer-core.NullDereference"],
-    "cppcheck": [],
-    "reason": "Clang 18 invalidates sibling fields after external tlv_fixed_format_init(&self->format, &self->fixed), then assumes calloc-initialized self->depth became nonzero during constructor failure cleanup. Core only initializes the supplied format; release_writer cannot traverse unretained tags here."
+    "cppcheck": ["missingReturn:684", "missingReturn:1372"],
+    "reason": "Relocated for #10: only the adapter include path changed; suppressed code and line numbers remain unchanged. Reassessed for #4: only the version include, return expression and docstring changed; suppressed paths and line numbers are unchanged. Reassessed for #20: format specifications replaced fixed-format entry points and moved the suppressed code; the suppressed paths are unchanged. Clang 18 does not model PyErr_SetString/PyErr_Occurred, so it follows an impossible path past kind validation (line 454). Cppcheck 2.13 does not recognize the Py_RETURN_NONE return at lines 685 and 1373."
   }
 }

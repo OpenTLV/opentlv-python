@@ -11,12 +11,13 @@ import _opentlv as _native
 
 from opentlv.element import Element
 from opentlv.error import BufferTooShortError, _from_native
+from opentlv.composed_format import ComposedFormat
 from opentlv.fixed_format import FixedFormat
-from opentlv.format import Format, _resolve_format
+from opentlv.format import Format, _format_specification, _resolve_format
 from opentlv.tag import Tag
 
 Value = Union[bytes, bytearray, memoryview]
-AnyFormat = Union[Format, FixedFormat]
+AnyFormat = Union[Format, FixedFormat, ComposedFormat]
 
 _INITIAL_CAPACITY = 64
 
@@ -68,11 +69,8 @@ class Writer:
         return self._pos
 
     def _write_native(self, offset: int, tag_bytes: bytes, value: Value) -> int:
-        if isinstance(self._format, FixedFormat):
-            return _native.write_fixed(self._buffer, offset, tag_bytes, value,
-                                       self._format.tag_size, self._format.length_size,
-                                       self._format.big_endian)
-        return _native.write(self._buffer, offset, tag_bytes, value, self._format)
+        return _native.write(self._buffer, offset, tag_bytes, value,
+                             _format_specification(self._format))
 
     def write(self, tag: Union[Tag, bytes], value: Value) -> None:
         """Appends one element with `tag` and `value`."""
@@ -169,13 +167,9 @@ def encoded_size(tag: Union[Tag, bytes], value_length: int,
     >>> encoded_size(Tag(b"\\x01"), 3)
     5
     """
-    format = _resolve_format(format)
     tag_bytes = tag.data if isinstance(tag, Tag) else tag
     try:
-        if isinstance(format, FixedFormat):
-            return _native.encoded_size_fixed(tag_bytes, value_length, format.tag_size,
-                                              format.length_size, format.big_endian)
-        return _native.encoded_size(tag_bytes, value_length, format)
+        return _native.encoded_size(tag_bytes, value_length, _format_specification(format))
     except _native.Error as native_error:
         raise _from_native(native_error) from None
 
@@ -186,12 +180,8 @@ def element_encoded_size(element: Element, format: AnyFormat | None = None) -> i
     Does not allocate an output buffer. The caller chooses storage, then writes
     with ``Writer(format, buffer=storage).write_element(element)``.
     """
-    format = _resolve_format(format)
     try:
-        if isinstance(format, FixedFormat):
-            return _native.element_encoded_size_fixed(
-                element.tag.data, element.value, format.tag_size,
-                format.length_size, format.big_endian)
-        return _native.element_encoded_size(element.tag.data, element.value, format)
+        return _native.element_encoded_size(element.tag.data, element.value,
+                                            _format_specification(format))
     except _native.Error as native_error:
         raise _from_native(native_error) from None

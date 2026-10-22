@@ -5,7 +5,6 @@
 #include "reader.h"
 #include "format.h"
 #include "writer.h"
-#include <tlv/formats/fixed.h>
 #include <tlv/reader/tree.h>
 #include <tlv/reader/visitor.h>
 #include <tlv/query/query.h>
@@ -219,11 +218,11 @@ static void destroy(PyObject* capsule) {
 
 PyObject* opentlv_python_cursor_create(PyObject* module, PyObject* args) {
     (void)module;
-    PyObject*  input;
-    int        format_id, final_input, nested, big_endian;
-    Py_ssize_t capacity, depth, count, tag_size, length_size;
-    if (!PyArg_ParseTuple(args, "Oippnnnnnp", &input, &format_id, &final_input, &nested, &capacity,
-                          &depth, &count, &tag_size, &length_size, &big_endian))
+    PyObject * input, *specification;
+    int        final_input, nested;
+    Py_ssize_t capacity, depth, count;
+    if (!PyArg_ParseTuple(args, "OOppnnn", &input, &specification, &final_input, &nested, &capacity,
+                          &depth, &count))
         return NULL;
     if (!PyBytes_Check(input) || capacity < 0 || depth < 0 || count < 0 ||
         (size_t)capacity > SIZE_MAX / sizeof(tlv_tree_frame_t)) {
@@ -233,11 +232,7 @@ PyObject* opentlv_python_cursor_create(PyObject* module, PyObject* args) {
     cursor* self = calloc(1, sizeof(*self));
     if (!self) return PyErr_NoMemory();
     tlv_result_t code = TLV_OK;
-    PyObject*    specification = format_id == -1
-                                     ? Py_BuildValue("(nni)", tag_size, length_size, big_endian)
-                                     : PyLong_FromLong(format_id);
-    self->format_owner = specification ? opentlv_python_format_owner(specification) : NULL;
-    Py_XDECREF(specification);
+    self->format_owner = opentlv_python_format_owner(specification);
     if (!self->format_owner) {
         free(self);
         return NULL;
@@ -287,6 +282,69 @@ static PyObject* range_object(tlv_range_t range) {
     return Py_BuildValue("(nn)", (Py_ssize_t)range.offset, (Py_ssize_t)range.size);
 }
 
+/* (tag, start, size, layout, source) of one element decoded from immutable
+ * input bytes. The source capsule retains input and the descriptor owner. */
+static PyObject* decoded_object(const tlv_element_t* element, const tlv_source_t* source,
+                                PyObject* input, PyObject* owner) {
+    PyObject* tag =
+        PyBytes_FromStringAndSize((const char*)element->tag.data, (Py_ssize_t)element->tag.size);
+    if (!tag) return NULL;
+    PyObject* layout = Py_BuildValue("(NNNNN)", range_object(source->header),
+                                     range_object(source->tag), range_object(source->length),
+                                     range_object(source->value), range_object(source->trailer));
+    if (!layout) {
+        Py_DECREF(tag);
+        return NULL;
+    }
+    source_state* state = malloc(sizeof(*state));
+    if (!state) {
+        Py_DECREF(tag);
+        Py_DECREF(layout);
+        return PyErr_NoMemory();
+    }
+    state->source = *source;
+    state->input = Py_NewRef(input);
+    state->owner = Py_NewRef(owner);
+    PyObject* capsule = PyCapsule_New(state, SOURCE_NAME, destroy_source);
+    if (!capsule) {
+        Py_DECREF(tag);
+        Py_DECREF(layout);
+        Py_DECREF(state->input);
+        Py_DECREF(state->owner);
+        free(state);
+        return NULL;
+    }
+    return Py_BuildValue("(NnnNN)", tag,
+                         (Py_ssize_t)(source->data - (const uint8_t*)PyBytes_AsString(input)),
+                         (Py_ssize_t)source->size, layout, capsule);
+}
+
+/* format_decode(format, data: bytes) -> (tag, start, size, layout, source) */
+PyObject* opentlv_python_format_decode(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject *specification, *input;
+    if (!PyArg_ParseTuple(args, "OO", &specification, &input)) return NULL;
+    if (!PyBytes_Check(input)) {
+        PyErr_SetString(PyExc_TypeError, "immutable bytes required");
+        return NULL;
+    }
+    PyObject*           owner;
+    const tlv_format_t* format = opentlv_python_format_resolve(specification, &owner);
+    if (!format) return NULL;
+    const uint8_t*     data = (const uint8_t*)PyBytes_AsString(input);
+    tlv_decoded_t      decoded;
+    tlv_format_error_t error;
+    tlv_result_t       code =
+        tlv_format_decode(format, data, (size_t)PyBytes_Size(input), &decoded, &error);
+    PyObject* result = NULL;
+    if (code == TLV_OK)
+        result = decoded_object(&decoded.element, &decoded.source, input, owner);
+    else
+        opentlv_python_raise_format(code, "decode", code == TLV_END ? NULL : &error, data);
+    Py_DECREF(owner);
+    return result;
+}
+
 static PyObject* cursor_pull(PyObject* capsule, int events) {
     cursor* self = PyCapsule_GetPointer(capsule, CURSOR_NAME);
     if (!available(self)) return NULL;
@@ -318,42 +376,12 @@ static PyObject* cursor_pull(PyObject* capsule, int events) {
         opentlv_python_raise_reader(code, &diagnostic);
         return NULL;
     }
-    PyObject* tag = PyBytes_FromStringAndSize((const char*)item.element.tag.data,
-                                              (Py_ssize_t)item.element.tag.size);
-    if (!tag) return NULL;
-    PyObject* layout =
-        Py_BuildValue("(NNNNN)", range_object(item.source.header), range_object(item.source.tag),
-                      range_object(item.source.length), range_object(item.source.value),
-                      range_object(item.source.trailer));
-    if (!layout) {
-        Py_DECREF(tag);
-        return NULL;
-    }
-    source_state* source = malloc(sizeof(*source));
-    if (!source) {
-        Py_DECREF(tag);
-        Py_DECREF(layout);
-        return PyErr_NoMemory();
-    }
-    source->source = item.source;
-    source->input = Py_NewRef(self->input);
-    source->owner = Py_NewRef(capsule);
-    PyObject* source_capsule = PyCapsule_New(source, SOURCE_NAME, destroy_source);
-    if (!source_capsule) {
-        Py_DECREF(tag);
-        Py_DECREF(layout);
-        Py_DECREF(source->input);
-        Py_DECREF(source->owner);
-        free(source);
-        return NULL;
-    }
+    PyObject* decoded = decoded_object(&item.element, &item.source, self->input, capsule);
+    if (!decoded) return NULL;
     self->current = item;
     self->has_current = self->nested && !events;
-    PyObject* result = Py_BuildValue(
-        "(NnnNnniN)", tag,
-        (Py_ssize_t)(item.source.data - (const uint8_t*)PyBytes_AsString(self->input)),
-        (Py_ssize_t)item.source.size, layout, (Py_ssize_t)item.depth, (Py_ssize_t)item.offset,
-        item.constructed, source_capsule);
+    PyObject* result = Py_BuildValue("(Nnni)", decoded, (Py_ssize_t)item.depth,
+                                     (Py_ssize_t)item.offset, item.constructed);
     if (!result || !events) return result;
     return Py_BuildValue("(iNnni)", event.kind, result, (Py_ssize_t)event.depth,
                          (Py_ssize_t)event.offset, event.skipped);

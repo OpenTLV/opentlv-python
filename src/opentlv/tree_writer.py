@@ -4,8 +4,7 @@
 """Bounded owned buffers around the canonical C Tree Writer."""
 import _opentlv as _native
 from opentlv.error import _from_native
-from opentlv.fixed_format import FixedFormat
-from opentlv.format import _resolve_format
+from opentlv.format import _format_specification
 from opentlv.tag import Tag
 
 
@@ -19,15 +18,12 @@ class TreeWriter:
 
     def __init__(self, capacity, format=None, *, scratch_capacity=None,
                  frame_capacity=64, max_depth=64, max_elements=65536):
-        format = _resolve_format(format)
-        fixed = isinstance(format, FixedFormat)
         if scratch_capacity is None:
             scratch_capacity = capacity
         try:
             self._capsule = _native.tree_writer_create(
-                -1 if fixed else format, capacity, scratch_capacity, frame_capacity,
-                max_depth, max_elements, format.tag_size if fixed else 0,
-                format.length_size if fixed else 0, format.big_endian if fixed else True)
+                _format_specification(format), capacity, scratch_capacity, frame_capacity,
+                max_depth, max_elements)
         except _native.Error as error:
             raise _from_native(error) from None
 

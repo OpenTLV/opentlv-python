@@ -8,13 +8,26 @@ from __future__ import annotations
 import enum
 import _opentlv
 
+from opentlv import composed_format
+from opentlv.format_operations import FormatOperations
 
-class Format(enum.IntEnum):
+
+class Format(FormatOperations, enum.IntEnum):
     """The wire format a `Reader` or `Writer` uses.
 
     Values match the format IDs `_opentlv` expects; do not renumber
-    them.
+    them. Every Format, including `FixedFormat` and composed formats, also
+    provides the canonical `decode()`, `measure()`, `encode()`, `can_read`
+    and `can_write` operations.
+
+    `fields()`, `variable()`, `escaped()` and `packed()` compose a custom
+    `ComposedFormat` from the generic C field encodings and compositions.
     """
+
+    fields = staticmethod(composed_format.fields)
+    variable = staticmethod(composed_format.variable)
+    escaped = staticmethod(composed_format.escaped)
+    packed = staticmethod(composed_format.packed)
 
     if _opentlv.HAS_BER:
         BER = 1
@@ -39,6 +52,9 @@ class Format(enum.IntEnum):
         LLDP = 4
         """LLDP packed header framing, without LLDPDU semantic validation."""
 
+    def _native_format(self):
+        return int(self)
+
 
 def _resolve_format(format):
     """Use BER by default, or require an explicit format when unavailable."""
@@ -50,8 +66,6 @@ def _resolve_format(format):
 
 
 def _format_specification(format):
-    """Copy owning native descriptor configuration, including FixedFormat."""
-    from opentlv.fixed_format import FixedFormat
+    """Native descriptor specification: builtin ID, fixed widths or composed owner."""
     format = _resolve_format(format)
-    return ((format.tag_size, format.length_size, format.big_endian)
-            if isinstance(format, FixedFormat) else int(format))
+    return format._native_format() if isinstance(format, FormatOperations) else int(format)

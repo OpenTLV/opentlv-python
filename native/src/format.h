@@ -10,9 +10,23 @@
 
 /* Stable IDs shared with opentlv.Format; unavailable IDs return NULL. */
 const tlv_format_t* opentlv_python_format_for(int format_id);
-/* Owned builtin/fixed descriptor; context storage is retained by the capsule. */
+/* Owned builtin, fixed or composed descriptor; context storage is retained by
+ * the capsule. A composed format capsule is its own owner. */
 PyObject*           opentlv_python_format_owner(PyObject* specification);
 const tlv_format_t* opentlv_python_format_pointer(PyObject* owner);
+/* Borrowed descriptor kept alive by the new reference *owner; NULL on error. */
+const tlv_format_t* opentlv_python_format_resolve(PyObject* specification, PyObject** owner);
+/* Composed formats own their configuration and Core-borrowed tables. */
+int                 opentlv_python_format_is_composed(PyObject* object);
+const tlv_format_t* opentlv_python_composed_pointer(PyObject* capsule);
+PyObject*           opentlv_python_format_compose(PyObject* module, PyObject* specification);
+/* Canonical Format operations on a specification. */
+PyObject* opentlv_python_format_capabilities(PyObject* module, PyObject* specification);
+PyObject* opentlv_python_format_measure(PyObject* module, PyObject* args);
+PyObject* opentlv_python_format_encode(PyObject* module, PyObject* args);
+/* Raises _opentlv.Error from Format callback detail; input locates decode ranges. */
+void opentlv_python_raise_format(tlv_result_t code, const char* operation,
+                                 const tlv_format_error_t* error, const uint8_t* input);
 /* Adds availability flags to the module; returns -1 on a Python error. */
 int opentlv_python_register_formats(PyObject* module);
 
