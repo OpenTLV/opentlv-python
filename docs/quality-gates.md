@@ -87,7 +87,7 @@ the extension, but the matrix does not claim testing one identical wheel across
 all interpreter versions. Hosted runner architectures are recorded in evidence;
 these checks are not a manylinux/macOS deployment-target or publication policy.
 
-The inventory is 323 pytest cases, nine examples and 171 shared Query
+The inventory is 339 pytest cases, ten examples and 171 shared Query
 fixtures / 664 checks. Intentional changes to tests or the pinned Core corpus
 must update this inventory with reviewed evidence. Skips, failures, empty suites
 and contradictory JUnit counts are rejected.
