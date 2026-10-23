@@ -8,7 +8,7 @@ The `opentlv` package is an experimental Python binding for OpenTLV. It binds
 `Reader`, `Writer`, `Document`/`Node`, `Element`, `Tag`, `Format` (including
 [custom composed formats](#custom-formats)),
 `LengthSchema`/`StructureSchema` (with a reusable `CheckedStructureSchema`),
-compiled Query programs and the `OpenTLVError` exception hierarchy,
+`ValueConstraint`, compiled Query programs and the `OpenTLVError` exception hierarchy,
 plus the generic Value and structure codecs (see [Codec](#codec)). For layout and build
 details, see [Python bindings](../development/python.md).
 
@@ -161,6 +161,22 @@ Format is: Reader, TreeReader, Writer, TreeWriter, Document, Query and schemas.
 Equal configurations return the same object while it is alive, so a Query
 compiled with one is compatible with a Document parsed with another.
 
+A `PackedField` also reads and writes its bits directly, outside a Format,
+through `tlv_packed_field_read()` and `tlv_packed_field_write()`.
+`field.read(data, header_size=1)` extracts it from the `header_size`-byte
+integer at the start of `data`, and `field.write(data, value, header_size=1)`
+inserts it into a writable buffer in place, keeping every bit outside the
+field; `byte_order="little"` selects the other byte order. A value wider than
+`bit_width` raises `ValueOverflowError`, short data `TruncatedError` (read) or
+`BufferTooShortError` (write), and a failed write leaves `data` unchanged.
+
+```python
+priority = opentlv.PackedField(bit_offset=5, bit_width=3)
+header = bytearray(b"\xa4")
+priority.read(header, header_size=1)      # 5
+priority.write(header, 2, header_size=1)  # header is now b"\x44"
+```
+
 Every Format, builtin, `FixedFormat` or composed, also exposes the C
 `tlv_format_t` operations directly: `decode(data)` returns a `Decoded` for one
 element, `measure(tag, value)` an `Encoding` of header, value, trailer and
@@ -270,6 +286,26 @@ for message in messages:
     checked.validate(message, format=Format.BER)
 ```
 
+`ValueConstraint` binds `tlv_value_constraint_t`, a constraint on one decoded
+signed 64-bit value rather than on TLV bytes, such as an ASN.1 INTEGER range
+or named numbers; pair it with a codec's `decode`.
+`ValueConstraint.range(min_value, max_value)` permits an inclusive range and
+`ValueConstraint.allowed(values)` a set of integers, or a mapping of integers
+to display names. Core checks the definition on construction
+(`tlv_value_constraint_check()`), raising `InvalidSchemaError` for reversed
+bounds. `validate(value)` raises `SchemaError` for a violation
+(`tlv_value_constraint_validate()`), and `name(value)` returns an allowed
+value's name or `None` (`tlv_value_constraint_name()`).
+
+```python
+from opentlv import ValueCodec, ValueConstraint
+
+color = ValueConstraint.allowed({0: "red", 1: "green", 2: "blue"})
+value = ValueCodec.INT64_MINIMAL_BE.decode(b"\x01")
+color.validate(value)
+color.name(value)  # "green"
+```
+
 Runnable version, validating the document `parse.py` reads, and rejecting an
 incomplete one:
 [validate.py](../../examples/validate.py)
@@ -295,6 +331,7 @@ for conversion, measurement and caller-owned output.
 | Codec | Python value | C descriptor |
 | --- | --- | --- |
 | `NumberCodec(encoding, width, digits)` | `int` (uint64) | `tlv_number_decode`/`tlv_number_encode` |
+| `SchemaNumberCodec(rule, encoding, width, digits)` | `int` (uint64) | `tlv_schema_number_codec()` |
 | `ValueCodec.UINT8`, `UINT16_BE`, `UINT16_LE`, `UINT32_BE`, `UINT32_LE` | `int` of exactly that width | `tlv_codec_uint8`, `tlv_codec_uint16_be`, ... |
 | `ValueCodec.INT64_MINIMAL_BE` | signed `int`, shortest two's complement | `tlv_codec_int64_minimal_be` |
 | `ValueCodec.BYTES` | `bytes` | `tlv_codec_bytes` |
@@ -309,6 +346,14 @@ trailing zero bytes. `DigitsCodec` packs digits high nibble first with trailing
 `F` padding, unlike numeric BCD. Width zero selects minimal encoding for all
 three. IPv4 encoding accepts anything `IPv4Address` accepts; decoded lists keep
 order and duplicates.
+
+`SchemaNumberCodec` is a `NumberCodec` whose Value lengths a `LengthRule`
+limits, through Core's `tlv_schema_number_t`. Decoding validates the length
+against the rule before converting; encoding with width zero picks the
+shortest width the rule permits, and a fixed width the rule rejects raises
+`SchemaError` instead of changing width. With `flags=1` (endpoints only),
+`SchemaNumberCodec(LengthRule(tag, 2, 4, flags=1)).encode(0x10000)` produces
+four bytes, since three are not permitted.
 
 ```python
 from opentlv import DigitsCodec, TextCodec, ValueCodec
@@ -411,6 +456,16 @@ until it or an ancestor is erased, its parent Value is replaced, or its
 document is closed. Invalid access raises `ValueError` before native access.
 Replacing a node's own Value leaves that node usable; its old children become
 invalid only after successful replacement. Unrelated handles remain valid.
+An applied `QueryExecution.edit_document()` invalidates every earlier node.
+
+`document.revision` increases with every successful insert, erase or Value
+replacement and stays the same after a failed edit, so comparing two values
+detects any change. With `Document(data, retain_source_locations=True)`,
+`node.source_location` is a `SourceLocation` with the node's `offset` and
+`header_size` in the parsed input, each `None` when unknown. Replacing a
+node's Value removes them from it and its ancestors, inserting or erasing a
+child removes them from its ancestors, and nodes created by edits have none;
+unaffected nodes keep their original coordinates.
 
 Runnable versions:
 [document.py](../../examples/document.py)
@@ -419,7 +474,11 @@ replaces a value and appends an element in an existing message
 [query.py](../../examples/query.py)
 addresses a deeply nested element by path instead of navigating node by node,
 including a malformed query and a query with no match
-(`python examples/query.py`).
+(`python examples/query.py`);
+[audit.py](../../examples/audit.py)
+validates a decoded INTEGER against named numbers, changes a packed header
+flag and reports the revision and original location of the changed element
+(`python examples/audit.py`).
 
 ## Error handling
 
@@ -431,7 +490,10 @@ the C `tlv_result_string` text. When the C API reports structured diagnostic
 detail for the failure, `offset`, `expected`, `actual`, `operation` and `tag`
 carry it, for both a `Reader` and a `Writer` failure; `length`, `required`
 and `available` carry buffer bounds (`length` is Writer-only).
-Fields the failure does not report are `None`.
+Fields the failure does not report are `None`. When C tracked the enclosing
+tags, `path` holds their bytes and `path_text` Core's
+`tlv_diagnostic_path_string()` text, such as `"6F > A5"`, ending in `" > ..."`
+when outer tags were omitted.
 
 Query failures retain common `location`, `severity`, `path`, `path_omitted`
 and `contexts` even without a Reader cause. `error.query["query_kind"]` is a
@@ -443,7 +505,9 @@ itself; conversion detail is `error.codec_detail`. A Schema Query failure's
 `field`, and is `None` for any other failure; its location, path and expected
 text are the error's own. A rejected
 path text raises `InvalidSyntaxError` (or `LimitError`) with Query detail and no
-Reader `operation`. Codec and Schema categories are typed too. See the
+Reader `operation`. Path text is parsed with its explicit length
+(`tlv_query_parse_n()`), so an embedded NUL or a non-ASCII character is a
+syntax error at its byte offset. Codec and Schema categories are typed too. See the
 [binding diagnostic reference](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/reference/errors.md#binding-diagnostics).
 
 ```python
@@ -484,9 +548,14 @@ calls `tlv_structure_decode`/`tlv_structure_encode` with C callbacks that
 invoke its Python functions. `opentlv.Document` wraps a
 `tlv_document_t*` in a `PyCapsule` that frees it (`tlv_document_free()`) when
 the capsule is garbage collected or `close()` drops Python's only reference
-to it. `Node` retains its Document and validates shared ownership tokens before
-using its internal pointer. This protects aliases and descendants from use after
-erasure, replacement or close. Remaining parity gaps are listed in the
+to it. `Node` retains its Document, its internal pointer and the identity
+Core assigned to that node, which is never reused. Before using the pointer it
+compares the Document's `tlv_document_retire_epoch()` with the epoch it last
+saw; only after a change does `tlv_document_node_identity()` locate the
+address without dereferencing it. This protects aliases and descendants from
+use after erasure, replacement or close, even when an allocation is reused. A
+Query edit additionally advances a binding generation that invalidates every
+earlier `Node`, because the edit reports only how many targets it applied. Remaining parity gaps are listed in the
 [binding capability matrix](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/concepts/bindings.md#capability-implementation-matrix).
 
 ## Tree measurement, preservation and materialization
@@ -497,7 +566,9 @@ encoded bytes; their length is the exact size. Workspace errors expose
 `required_data` and `required_scratch` lower bounds. A retry needs a fresh source.
 `Reader.read_source()` results expose `preserve()` and `preserve_into(storage)`;
 `Writer.preserve(decoded)` appends the unchanged original representation.
-All equality checks and byte copying are performed by C.
+All equality checks and byte copying are performed by C: `preserve_into`
+calls `tlv_source_preserve()` directly, and a short destination raises
+`BufferTooShortError` with `required` and `available` and leaves it unchanged.
 
 `DocumentBuilder(reader)` consumes a fresh TreeReader incrementally.
 `DocumentBuilder(reader, next_subtree=True)` consumes only its next subtree.

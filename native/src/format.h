@@ -20,6 +20,8 @@ const tlv_format_t* opentlv_python_format_resolve(PyObject* specification, PyObj
 int                 opentlv_python_format_is_composed(PyObject* object);
 const tlv_format_t* opentlv_python_composed_pointer(PyObject* capsule);
 PyObject*           opentlv_python_format_compose(PyObject* module, PyObject* specification);
+/* Reads or inserts one packed bit field through tlv_packed_field_read()/write(). */
+PyObject* opentlv_python_packed_field(PyObject* module, PyObject* args);
 /* Canonical Format operations on a specification. */
 PyObject* opentlv_python_format_capabilities(PyObject* module, PyObject* specification);
 PyObject* opentlv_python_format_measure(PyObject* module, PyObject* args);

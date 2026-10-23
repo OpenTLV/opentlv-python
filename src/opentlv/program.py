@@ -492,10 +492,7 @@ class QueryExecution:
         tag_data = bytes(tag.data if isinstance(tag, Tag) else tag)
         value_data = bytes(value)
         previous_generation = self._document._query_generation
-        previous_lifetimes = self._document._lifetimes
-        replacement_lifetimes = type(previous_lifetimes)()
         self._document._query_generation += 1
-        self._document._lifetimes = replacement_lifetimes
         self._document._query_active += 1
         applied = None
         try:
@@ -511,7 +508,6 @@ class QueryExecution:
             # after a native mutation. Restore handles only with a known zero count.
             if applied == 0:
                 self._document._query_generation = previous_generation
-                self._document._lifetimes = previous_lifetimes
 
     def next(self, reader=None):
         """Pull one match; TLV_END becomes StopIteration, not NEED_MORE_DATA."""

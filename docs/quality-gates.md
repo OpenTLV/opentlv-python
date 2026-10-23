@@ -87,7 +87,7 @@ the extension, but the matrix does not claim testing one identical wheel across
 all interpreter versions. Hosted runner architectures are recorded in evidence;
 these checks are not a manylinux/macOS deployment-target or publication policy.
 
-The inventory is 384 pytest cases, thirteen examples and 171 shared Query
+The inventory is 397 pytest cases, fourteen examples and 171 shared Query
 fixtures / 664 checks. Intentional changes to tests or the pinned Core corpus
 must update this inventory with reviewed evidence. Skips, failures, empty suites
 and contradictory JUnit counts are rejected.
@@ -147,6 +147,10 @@ For #23, the number codec moved from `module.c` to `codec.c`, which moved the
 suppressed `module.c` lines up; the new `codec.c` needs no exception.
 For #29, the `module.c` changes follow the suppressed lines, which stay
 unchanged; the Writer session in `writer.c` needs no exception.
+For #31, the diagnostic path text helper and the Document revision, epoch,
+identity and source-location entry points moved the suppressed `module.c` lines
+down; the packed field, value constraint and schema number code in `compose.c`,
+`schema.c` and `codec.c` needs no exception.
 
 ## Core API coverage
 
@@ -180,7 +184,12 @@ the endian, tag, value, size and copy primitives, the diagnostic producers
 bound path: wrappers that pass a NULL diagnostic to a bound `_diag`
 counterpart, the Tag/Value forms of the Element write functions, and
 `tlv_writer_copy_element`, which is `tlv_writer_write_element` without
-diagnostics. Diagnostic consumers such as the `*_string` lookups
+diagnostics. `tlv_query_parse` is the NUL-terminated form of the bound
+`tlv_query_parse_n`. The Format and codec callback implementations
+(`tlv_fields_*`, `tlv_binary_*`, `tlv_tagged_fields_*`, `tlv_tagged_binary_*`,
+`tlv_escaped_*`, `tlv_variable_*` and `tlv_schema_number_decode`/`encode`) are
+installed by the bound descriptor initializers, and Core calls them through the
+descriptor. Diagnostic consumers such as the `*_string` lookups
 and `tlv_diagnostic_path_string` remain counted. Patterns that match nothing
 in the pinned Core are reported, so stale entries are visible after a pin bump.
 Change the ignore list only for symbols the binding intentionally leaves unbound.

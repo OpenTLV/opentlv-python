@@ -29,10 +29,10 @@ typedef union codec_object {
 int opentlv_python_codec_init(opentlv_python_codec* self, PyObject* specification) {
     int        kind, parameter;
     Py_ssize_t width;
-    PyObject*  digits_obj;
+    PyObject * digits_obj, *rule = NULL;
     memset(self, 0, sizeof *self);
     if (!PyTuple_Check(specification) ||
-        !PyArg_ParseTuple(specification, "iinO", &kind, &parameter, &width, &digits_obj)) {
+        !PyArg_ParseTuple(specification, "iinO|O", &kind, &parameter, &width, &digits_obj, &rule)) {
         if (!PyErr_Occurred()) PyErr_SetString(PyExc_TypeError, "codec specification required");
         return 0;
     }
@@ -66,6 +66,34 @@ int opentlv_python_codec_init(opentlv_python_codec* self, PyObject* specificatio
             self->configured =
                 (tlv_codec_t){&self->config.digits, tlv_digits_decode, tlv_digits_encode};
             return 1;
+        case OPENTLV_PYTHON_CODEC_SCHEMA_NUMBER: {
+            PyObject *tag, *minimum, *maximum, *flags, *multiple;
+            if (!rule || !PyTuple_Check(rule) ||
+                !PyArg_ParseTuple(rule, "SOOOO", &tag, &minimum, &maximum, &flags, &multiple)) {
+                if (!PyErr_Occurred()) PyErr_SetString(PyExc_TypeError, "length rule required");
+                return 0;
+            }
+            tlv_schema_entry_t* entry = &self->entry;
+            entry->tag = tlv_tag((const uint8_t*)PyBytes_AsString(tag), (size_t)PyBytes_Size(tag));
+            if ((entry->min_length = PyLong_AsSize_t(minimum)) == (size_t)-1 && PyErr_Occurred())
+                return 0;
+            if ((entry->max_length = PyLong_AsSize_t(maximum)) == (size_t)-1 && PyErr_Occurred())
+                return 0;
+            if ((entry->length_multiple = PyLong_AsSize_t(multiple)) == (size_t)-1 &&
+                PyErr_Occurred())
+                return 0;
+            unsigned long bits = PyLong_AsUnsignedLong(flags);
+            if (PyErr_Occurred()) return 0;
+            if (bits > UINT32_MAX) {
+                PyErr_SetString(PyExc_OverflowError, "flags exceed uint32");
+                return 0;
+            }
+            entry->flags = (uint32_t)bits;
+            self->config.schema_number = (tlv_schema_number_t){
+                entry, {(tlv_number_encoding_t)parameter, (size_t)width, (unsigned int)digits}};
+            self->configured = tlv_schema_number_codec(&self->config.schema_number);
+            return 1;
+        }
         case OPENTLV_PYTHON_CODEC_UINT8: self->codec = &tlv_codec_uint8; return 1;
         case OPENTLV_PYTHON_CODEC_UINT16_BE: self->codec = &tlv_codec_uint16_be; return 1;
         case OPENTLV_PYTHON_CODEC_UINT16_LE: self->codec = &tlv_codec_uint16_le; return 1;
@@ -144,6 +172,7 @@ static int encode_object(const opentlv_python_codec* self, PyObject* value, code
     *pointer = object;
     switch (self->kind) {
         case OPENTLV_PYTHON_CODEC_NUMBER:
+        case OPENTLV_PYTHON_CODEC_SCHEMA_NUMBER:
         case OPENTLV_PYTHON_CODEC_UINT8:
         case OPENTLV_PYTHON_CODEC_UINT16_BE:
         case OPENTLV_PYTHON_CODEC_UINT16_LE:
@@ -214,7 +243,8 @@ static PyObject* address_bytes(const tlv_ipv4_t* address) {
  * four-byte addresses copied through tlv_ipv4_list_at(). */
 static PyObject* decoded_value(const opentlv_python_codec* self, const codec_object* object) {
     switch (self->kind) {
-        case OPENTLV_PYTHON_CODEC_NUMBER: return PyLong_FromUnsignedLongLong(object->u64);
+        case OPENTLV_PYTHON_CODEC_NUMBER:
+        case OPENTLV_PYTHON_CODEC_SCHEMA_NUMBER: return PyLong_FromUnsignedLongLong(object->u64);
         case OPENTLV_PYTHON_CODEC_UINT8: return PyLong_FromUnsignedLong(object->u8);
         case OPENTLV_PYTHON_CODEC_UINT16_BE:
         case OPENTLV_PYTHON_CODEC_UINT16_LE: return PyLong_FromUnsignedLong(object->u16);

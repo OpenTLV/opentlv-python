@@ -15,7 +15,7 @@ import _opentlv as _native
 
 from opentlv.error import _from_native
 from opentlv.format import Format, _format_specification
-from opentlv.schema import CheckedStructureSchema, StructureSchema
+from opentlv.schema import CheckedStructureSchema, LengthRule, StructureSchema
 
 
 def decode_amount(data: bytes) -> int:
@@ -49,7 +49,7 @@ def encode_amount(value: int) -> bytes:
 
 
 # Native codec kinds, matching native/src/codec.h.
-_NUMBER, _TEXT, _DIGITS = 0, 8, 9
+_NUMBER, _TEXT, _DIGITS, _SCHEMA_NUMBER = 0, 8, 9, 12
 
 
 class _ValueCodec:
@@ -110,6 +110,34 @@ class NumberCodec(_ValueCodec):
     @property
     def _spec(self):
         return (_NUMBER, int(self.encoding), self.width, self.digits)
+
+
+@dataclass(frozen=True)
+class SchemaNumberCodec(_ValueCodec):
+    """uint64 codec whose Value lengths a field Schema rule limits (`tlv_schema_number_t`).
+
+    `rule` owns the permitted lengths; the number configuration is that of
+    `NumberCodec`. Decoding validates the Value length against `rule` first.
+    Width zero encodes in the shortest width the rule permits; a fixed width
+    the rule rejects raises instead of changing width.
+
+    >>> codec = SchemaNumberCodec(LengthRule(b"\\x9f\\x02", 2, 4, flags=1))
+    >>> codec.encode(5).hex(), codec.encode(0x123456).hex()
+    ('0005', '00123456')
+    """
+    rule: LengthRule
+    encoding: NumberEncoding = NumberEncoding.BIG_ENDIAN
+    width: int = 0
+    digits: int = 0
+
+    def __post_init__(self):
+        if not isinstance(self.rule, LengthRule):
+            raise TypeError("LengthRule required")
+
+    @property
+    def _spec(self):
+        return (_SCHEMA_NUMBER, int(self.encoding), self.width, self.digits,
+                self.rule._to_native())
 
 
 class ValueCodec(_ValueCodec, enum.Enum):
