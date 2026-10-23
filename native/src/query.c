@@ -2,12 +2,12 @@
 // Copyright (c) 2026 Marek Cingel
 #define PY_SSIZE_T_CLEAN
 #include "query.h"
+#include "codec.h"
 #include "location.h"
 #include "reader.h"
 #include "format.h"
 #include <tlv/query/adapters.h>
 #include <tlv/query/plan.h>
-#include <tlv/codec/number.h>
 #if OPENTLV_EMV
 #include <tlv/builtins/emv/query.h>
 #endif
@@ -36,8 +36,7 @@ typedef struct program {
     PyObject*                  owners;
     tlv_query_tag_adapter_t    tags;
     /* Native codec providers, indexed by conversion; adapters borrow them. */
-    tlv_number_codec_config_t numbers[4];
-    tlv_codec_t               codecs[4];
+    opentlv_python_codec      codecs[4];
     tlv_query_codec_adapter_t adapters[4];
 } program;
 typedef struct execution {
@@ -327,28 +326,24 @@ done:
 
 enum { PROGRAM_COMPILE, PROGRAM_LOAD, PROGRAM_PLAN };
 
-/* A Python provider is (id, capacity, decode); a native number codec provider
- * is (id, encoding, width, digits), decoded by the generic C codec adapter. */
+/* A Python provider is (id, capacity, decode); a native codec provider is
+ * (id, codec specification), decoded by the generic C codec adapter. */
 static int install_provider(program* self, size_t* hook_count, PyObject* key, PyObject* value) {
     long function = PyLong_AsLong(key);
     if (PyErr_Occurred() || function < 0 || function > 3 || !PyTuple_Check(value)) return 0;
     unsigned long    id;
     tlv_query_hook_t hook;
-    if (PyTuple_Size(value) == 4) {
-        int        encoding;
-        Py_ssize_t width;
-        unsigned   digits;
-        if (!PyArg_ParseTuple(value, "kinI", &id, &encoding, &width, &digits) || encoding < 0 ||
-            encoding > TLV_NUMBER_BCD || width < 0)
+    if (PyTuple_Size(value) == 2) {
+        PyObject* specification;
+        size_t    scratch;
+        if (!PyArg_ParseTuple(value, "kO", &id, &specification) ||
+            !opentlv_python_codec_init(&self->codecs[function], specification) ||
+            !opentlv_python_codec_query(&self->codecs[function], &self->adapters[function],
+                                        &scratch))
             return 0;
-        self->numbers[function] =
-            (tlv_number_codec_config_t){(tlv_number_encoding_t)encoding, (size_t)width, digits};
-        self->codecs[function] = tlv_number_codec(&self->numbers[function]);
-        self->adapters[function] =
-            (tlv_query_codec_adapter_t){&self->codecs[function], TLV_QUERY_CODEC_UNSIGNED};
         hook = (tlv_query_hook_t){0,
                                   (tlv_query_conversion_t)function,
-                                  sizeof(uint64_t),
+                                  scratch,
                                   sizeof(uint64_t),
                                   &self->adapters[function],
                                   tlv_query_codec_decode};

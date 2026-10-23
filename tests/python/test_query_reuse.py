@@ -9,7 +9,8 @@ from opentlv import (CallbackError, Document, FixedFormat, InvalidStateError, In
                      InvalidTagError, InvalidValueError, LimitError, Query, QueryCodecProvider,
                      QueryProgram, QueryProvider, TreeReader, TruncatedError, UnsupportedError,
                      Visit, VisitorError)
-from opentlv.codec import NumberCodec, NumberEncoding
+from opentlv.codec import (DigitsCodec, NumberCodec, NumberEncoding, TextAlphabet, TextCodec,
+                           ValueCodec)
 
 WIRE = bytes.fromhex("70065a01015001025a0103")
 
@@ -140,6 +141,37 @@ def test_codec_provider_decodes_values_without_python_callbacks():
         QueryCodecProvider(0, NumberCodec())
     with pytest.raises(TypeError):
         QueryCodecProvider(107, lambda value, metadata: 0)
+
+
+@pytest.mark.parametrize("codec,wire,expected", [
+    (ValueCodec.UINT8, "5a01ff", 255), (ValueCodec.UINT16_BE, "5a020102", 0x0102),
+    (ValueCodec.UINT16_LE, "5a020102", 0x0201), (ValueCodec.UINT32_BE, "5a0401020304", 0x01020304),
+    (ValueCodec.UINT32_LE, "5a0401020304", 0x04030201),
+    (ValueCodec.INT64_MINIMAL_BE, "5a02ff7f", -129)])
+def test_codec_provider_widens_fixed_integer_codecs(codec, wire, expected):
+    provider = QueryCodecProvider(108, codec)
+    assert QueryProgram("num(//5A)", providers={"num": provider}).evaluate(
+        bytes.fromhex(wire)) == expected
+
+
+def test_codec_provider_decodes_text_and_rejects_unadaptable_codecs():
+    alnum = QueryCodecProvider(109, TextCodec(TextAlphabet.ASCII_ALNUM))
+    program = QueryProgram("text(//5A)", providers={"text": alnum})
+    assert program.evaluate(bytes.fromhex("5a024142")) == "AB"
+    with pytest.raises(InvalidValueError) as failure:
+        program.evaluate(bytes.fromhex("5a022042"))
+    assert failure.value.codec_detail["reason_name"] == "text"
+    raw = QueryProgram("text(//5A)", providers={"text": QueryCodecProvider(110, ValueCodec.BYTES)})
+    assert raw.evaluate(bytes.fromhex("5a02c3a9")) == "é"
+    with pytest.raises(InvalidValueError):
+        raw.evaluate(bytes.fromhex("5a01ff"))
+    with pytest.raises(InvalidValueError) as failure:
+        QueryProgram("num(//5A)", providers={"num": QueryCodecProvider(111, ValueCodec.UINT16_BE)}
+                     ).evaluate(bytes.fromhex("5a0101"))
+    assert failure.value.codec_detail["reason_name"] == "length"
+    for codec in (ValueCodec.IPV4, ValueCodec.IPV4_LIST, DigitsCodec()):
+        with pytest.raises(TypeError):
+            QueryCodecProvider(112, codec)
 
 
 def test_document_results_visit_resume_and_reject_mutation():

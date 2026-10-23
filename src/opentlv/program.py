@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 from types import MappingProxyType
 import _opentlv as _native
-from opentlv.codec import NumberCodec
+from opentlv.codec import NumberCodec, TextCodec, ValueCodec
 from opentlv.cursor import TreeReader, Visit
 from opentlv.element import Element
 from opentlv.diagnostic import QueryErrorKind
@@ -48,19 +48,23 @@ class QueryProvider:
 class QueryCodecProvider:
     """A conversion provider backed by a native Value codec, without Python callbacks.
 
-    C decodes complete Values through ``tlv_query_codec_decode``. A
-    ``NumberCodec`` yields unsigned integers; a value above the signed 64-bit
-    range fails as an invalid Value with codec detail. The nonzero uint32 ID
-    must stay stable for the codec configuration, as for ``QueryProvider``.
+    C decodes complete Values through ``tlv_query_codec_decode``.
+    ``NumberCodec`` and the unsigned ``ValueCodec`` members yield unsigned
+    integers; a value above the signed 64-bit range fails as an invalid Value
+    with codec detail. ``ValueCodec.INT64_MINIMAL_BE`` yields signed integers.
+    ``TextCodec`` and ``ValueCodec.BYTES`` yield strings that C validates as
+    UTF-8. The nonzero uint32 ID must stay stable for the codec
+    configuration, as for ``QueryProvider``.
     """
     id: int
-    codec: NumberCodec
+    codec: NumberCodec | TextCodec | ValueCodec
 
     def __post_init__(self):
         if type(self.id) is not int or not 0 < self.id <= 0xffffffff:
             raise ValueError("provider ID must be nonzero uint32")
-        if not isinstance(self.codec, NumberCodec):
-            raise TypeError("NumberCodec required")
+        if not isinstance(self.codec, (NumberCodec, TextCodec, ValueCodec)) or self.codec in (
+                ValueCodec.IPV4, ValueCodec.IPV4_LIST):
+            raise TypeError("NumberCodec, TextCodec or an integer or bytes ValueCodec required")
 
 
 @dataclass(frozen=True)
@@ -83,8 +87,7 @@ class QueryTagAdapter:
 
 def _provider(provider):
     if isinstance(provider, QueryCodecProvider):
-        codec = provider.codec
-        return (provider.id, int(codec.encoding), codec.width, codec.digits)
+        return (provider.id, provider.codec._spec)
     return (provider.id, provider.max_result_bytes,
             lambda value, metadata, decode=provider.decode:
             decode(value, None if metadata is None else _match(metadata)))

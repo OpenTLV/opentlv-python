@@ -6,9 +6,9 @@
 #include <Python.h>
 
 #include <stdlib.h>
-#include <limits.h>
 #include <string.h>
 
+#include "codec.h"
 #include "format.h"
 #include "generator.h"
 #include "reader.h"
@@ -21,7 +21,6 @@
 #include <tlv/builtins/emv/emv_codec.h>
 #endif
 #include <tlv/codec/codec.h>
-#include <tlv/codec/number.h>
 #include <tlv/document/document.h>
 #include <tlv/result.h>
 #include <tlv/definition.h>
@@ -666,6 +665,21 @@ static void destroy_checked_schema(PyObject* capsule) {
     free(self);
 }
 
+const tlv_structure_schema_t* opentlv_python_schema_acquire(PyObject*                schema_obj,
+                                                            tlv_structure_schema_t** owned) {
+    *owned = NULL;
+    if (PyCapsule_IsValid(schema_obj, CHECKED_SCHEMA_NAME)) {
+        const checked_schema* handle = PyCapsule_GetPointer(schema_obj, CHECKED_SCHEMA_NAME);
+        return handle ? handle->schema : NULL;
+    }
+    *owned = build_structure_schema(schema_obj);
+    return *owned;
+}
+
+void opentlv_python_schema_release(tlv_structure_schema_t* schema) {
+    free_structure_schema(schema);
+}
+
 /* Validates or reports with a resolved descriptor; the caller owns buffer.
  * `schema_obj` is a serialized schema or a checked schema capsule. */
 static PyObject* structure_validate(const Py_buffer* buffer, const tlv_format_t* format,
@@ -859,79 +873,6 @@ static PyObject* _opentlv_definition_find(PyObject* module, PyObject* args) {
     PyObject* result = found ? PyLong_FromSize_t((size_t)(found - entries)) : Py_NewRef(Py_None);
     free(entries);
     return result;
-}
-
-static PyObject* _opentlv_number_codec(PyObject* module, PyObject* args) {
-    (void)module;
-    tlv_codec_diagnostic_t diagnostic;
-    int                    operation, encoding;
-    Py_ssize_t             width;
-    PyObject*              digits_obj;
-    PyObject*              input;
-    PyObject*              output = Py_None;
-    if (!PyArg_ParseTuple(args, "iinOO|O", &operation, &encoding, &width, &digits_obj, &input,
-                          &output))
-        return NULL;
-    if (width < 0) {
-        PyErr_SetString(PyExc_ValueError, "negative codec width");
-        return NULL;
-    }
-    unsigned long digits = PyLong_AsUnsignedLong(digits_obj);
-    if (PyErr_Occurred()) return NULL;
-    if (digits > UINT_MAX) {
-        PyErr_SetString(PyExc_OverflowError, "digits exceed unsigned int");
-        return NULL;
-    }
-    tlv_number_codec_config_t config = {(tlv_number_encoding_t)encoding, (size_t)width,
-                                        (unsigned int)digits};
-    uint64_t                  value = 0;
-    tlv_result_t              code;
-    if (operation == 0) {
-        Py_buffer data;
-        if (PyObject_GetBuffer(input, &data, PyBUF_SIMPLE) < 0) return NULL;
-        code = tlv_number_decode(&config, data.buf, (size_t)data.len, &value, sizeof(value),
-                                 &diagnostic);
-        PyBuffer_Release(&data);
-        if (code != TLV_OK) {
-            raise_codec_error(code, &diagnostic);
-            return NULL;
-        }
-        return PyLong_FromUnsignedLongLong(value);
-    }
-    value = PyLong_AsUnsignedLongLong(input);
-    if (PyErr_Occurred()) return NULL;
-    size_t written = 0;
-    if (operation == 3) {
-        Py_buffer buffer;
-        if (PyObject_GetBuffer(output, &buffer, PyBUF_WRITABLE) < 0) return NULL;
-        code = tlv_number_encode(&config, &value, sizeof(value), buffer.buf, (size_t)buffer.len,
-                                 &written, &diagnostic);
-        PyBuffer_Release(&buffer);
-        if (code != TLV_OK) {
-            raise_codec_error(code, &diagnostic);
-            return NULL;
-        }
-        return PyLong_FromSize_t(written);
-    }
-    if (operation != 1 && operation != 2) {
-        PyErr_SetString(PyExc_ValueError, "unknown codec operation");
-        return NULL;
-    }
-    code = tlv_number_encode(&config, &value, sizeof(value), NULL, 0, &written, &diagnostic);
-    if (code != TLV_OK) {
-        raise_codec_error(code, &diagnostic);
-        return NULL;
-    }
-    if (operation == 2) return PyLong_FromSize_t(written);
-    /* Numeric C representations never exceed nine bytes; size query already validates. */
-    uint8_t bytes[9];
-    code = tlv_number_encode(&config, &value, sizeof(value), bytes, sizeof(bytes), &written,
-                             &diagnostic);
-    if (code != TLV_OK) {
-        raise_codec_error(code, &diagnostic);
-        return NULL;
-    }
-    return PyBytes_FromStringAndSize((const char*)bytes, (Py_ssize_t)written);
 }
 
 #if OPENTLV_EMV
@@ -1745,6 +1686,10 @@ void opentlv_python_raise_writer(tlv_result_t code, const tlv_writer_diagnostic_
     raise_writer_error(code, diagnostic);
 }
 
+void opentlv_python_raise_codec(tlv_result_t code, const tlv_codec_diagnostic_t* diagnostic) {
+    raise_codec_error(code, diagnostic);
+}
+
 void opentlv_python_raise_format(tlv_result_t code, const char* operation,
                                  const tlv_format_error_t* error, const uint8_t* input) {
     static const char* const regions[] = {"header", "tag", "length", "value", "trailer"};
@@ -1937,7 +1882,9 @@ static PyMethodDef opentlv_python_methods[] = {
      "Check a structural schema definition, optionally preparing a reusable handle."},
     {"definition_find", _opentlv_definition_find, METH_VARARGS,
      "Find the first generic C Definition."},
-    {"number_codec", _opentlv_number_codec, METH_VARARGS, "Configured C numeric Value codec."},
+    {"value_codec", opentlv_python_value_codec, METH_VARARGS, "Configured C Value codec."},
+    {"structure_codec", opentlv_python_structure_codec, METH_VARARGS,
+     "Validated C structure codec with Python object callbacks."},
 #if OPENTLV_EMV
     {"emv_decode_amount", _opentlv_emv_decode_amount, METH_VARARGS,
      "Decode 6 bytes of BCD (EMV format n12) into an unscaled minor-unit amount."},
