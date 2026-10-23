@@ -207,3 +207,29 @@ def test_structure_codec_applies_its_format_and_limits():
     assert fixed.encode(b"ab") == b"\x01\x02ab"
     with pytest.raises(LimitError):
         StructureCodec(decode=len, max_elements=1).decode(b"\x5a\x00\x5a\x00")
+
+
+def test_schema_number_codec_lets_the_field_schema_choose_widths():
+    from opentlv import (InvalidSchemaError, LengthRule, NumberCodec, NumberEncoding,
+                         SchemaError, SchemaNumberCodec)
+    endpoints = SchemaNumberCodec(LengthRule(b"\x9f\x02", 2, 4, flags=1))
+    assert endpoints.encode(5) == b"\x00\x05"
+    assert endpoints.encode(0x10000) == b"\x00\x01\x00\x00"
+    assert endpoints.encoded_size(0x10000) == 4
+    assert endpoints.decode(b"\x00\x00\x01\x02") == 0x102
+    with pytest.raises(SchemaError):
+        endpoints.decode(b"\x00\x01\x02")
+    with pytest.raises(SchemaError):
+        endpoints.encode(2**32)
+    output = bytearray(b"!!!")
+    assert endpoints.encode_into(1, output) == 2 and output == b"\x00\x01!"
+    fixed = SchemaNumberCodec(LengthRule(b"\x01", 2, 2), width=2)
+    assert fixed.encode(1) == NumberCodec(width=2).encode(1)
+    with pytest.raises(SchemaError):
+        SchemaNumberCodec(LengthRule(b"\x01", 2, 2), width=4).encode(1)
+    bcd = SchemaNumberCodec(LengthRule(b"\x01", 3, 3), NumberEncoding.BCD, digits=6)
+    assert bcd.decode(bcd.encode(123456)) == 123456
+    with pytest.raises(InvalidSchemaError):
+        SchemaNumberCodec(LengthRule(b"\x01", 4, 2)).decode(b"\x00\x00\x00")
+    with pytest.raises(TypeError):
+        SchemaNumberCodec((b"\x01", 1, 1, 0, 0))

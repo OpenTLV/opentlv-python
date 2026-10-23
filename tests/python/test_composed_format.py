@@ -64,6 +64,35 @@ def test_packed_tag_size_and_validation():
         Format.packed(header_size=4, tag=PackedField(0, 17), length=PackedField(17, 8))
 
 
+def test_packed_field_reads_and_writes_bits_through_core():
+    from opentlv import BufferTooShortError, ValueOverflowError
+    tag, length = LLDP["tag"], LLDP["length"]
+    assert tag.read(b"\x02\x07", header_size=2) == 1
+    assert length.read(b"\x02\x07\xff", header_size=2) == 7
+    assert length.read(b"\x07\x02", header_size=2, byte_order="little") == 7
+    header = bytearray(b"\x02\x07")
+    length.write(header, 0x1FF, header_size=2)
+    assert header == b"\x03\xff" and tag.read(header, header_size=2) == 1
+    tag.write(memoryview(header), 0x7F, header_size=2)
+    assert header == b"\xff\xff"
+    for value, data, error in ((0x200, header, ValueOverflowError),
+                               (1, bytearray(b"\xff"), BufferTooShortError)):
+        before = bytes(data)
+        with pytest.raises(error):
+            length.write(data, value, header_size=2)
+        assert data == before
+    with pytest.raises(TruncatedError):
+        length.read(b"\x02", header_size=2)
+    with pytest.raises(InvalidArgError):
+        PackedField(5, 4).read(b"\x00", header_size=1)
+    with pytest.raises(BufferError):
+        length.write(b"\x00\x00", 1, header_size=2)
+    with pytest.raises(ValueError):
+        length.write(header, -1, header_size=2)
+    with pytest.raises(ValueError):
+        length.read(header, header_size=2, byte_order="middle")
+
+
 def test_escaped_composition_inline_extended_and_tag_only():
     format = Format.escaped(FixedIdentifier(1), EscapedLength(0xFF, 2), tag_only=[b"\x00"])
     assert format.encode(b"\x07", b"abc") == b"\x07\x03abc"

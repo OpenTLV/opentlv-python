@@ -99,6 +99,82 @@ class LengthSchema:
             raise _from_native(error) from None
 
 
+class ValueConstraintKind(enum.IntEnum):
+    """Kind of constraint a `ValueConstraint` applies to a decoded value."""
+
+    NONE = 0
+    """Every value is permitted."""
+
+    RANGE = 1
+    """The value must be within [min_value, max_value], inclusive."""
+
+    ALLOWED_VALUES = 2
+    """The value must equal one of allowed_values."""
+
+
+@dataclass(frozen=True)
+class ValueConstraint:
+    """Constraint on one decoded signed 64-bit value (`tlv_value_constraint_t`).
+
+    Pair it with a codec's decode step, such as an ASN.1 INTEGER value range
+    or named numbers; it does not inspect TLV bytes. Core checks the
+    definition on construction and raises `InvalidSchemaError` for reversed
+    bounds. `allowed_value_names` is `None` or parallels `allowed_values`,
+    with `None` for a value without a name.
+
+    >>> color = ValueConstraint.allowed({0: "red", 1: "green"})
+    >>> color.validate(1)
+    >>> color.name(1)
+    'green'
+    >>> color.validate(2)
+    Traceback (most recent call last):
+        ...
+    opentlv.error.SchemaError: schema constraint violated
+    """
+
+    kind: ValueConstraintKind = ValueConstraintKind.NONE
+    min_value: int = 0
+    max_value: int = 0
+    allowed_values: tuple[int, ...] = ()
+    allowed_value_names: Optional[tuple[Optional[str], ...]] = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "kind", ValueConstraintKind(self.kind))
+        object.__setattr__(self, "allowed_values", tuple(self.allowed_values))
+        if self.allowed_value_names is not None:
+            object.__setattr__(self, "allowed_value_names", tuple(self.allowed_value_names))
+        self._call(0)
+
+    @classmethod
+    def range(cls, min_value: int, max_value: int) -> "ValueConstraint":
+        """Permit every value from `min_value` to `max_value`, inclusive."""
+        return cls(ValueConstraintKind.RANGE, min_value, max_value)
+
+    @classmethod
+    def allowed(cls, values) -> "ValueConstraint":
+        """Permit only `values`: integers, or a mapping of integers to display names."""
+        if isinstance(values, dict):
+            return cls(ValueConstraintKind.ALLOWED_VALUES, allowed_values=tuple(values),
+                       allowed_value_names=tuple(values.values()))
+        return cls(ValueConstraintKind.ALLOWED_VALUES, allowed_values=tuple(values))
+
+    def _call(self, operation: int, value: int = 0):
+        try:
+            return _native.value_constraint(
+                operation, (int(self.kind), self.min_value, self.max_value, self.allowed_values,
+                            self.allowed_value_names), value)
+        except _native.Error as error:
+            raise _from_native(error) from None
+
+    def validate(self, value: int) -> None:
+        """Raise `SchemaError` unless `value` satisfies the constraint."""
+        self._call(1, value)
+
+    def name(self, value: int) -> Optional[str]:
+        """The display name of an allowed `value`, or `None` if it has none."""
+        return self._call(2, value)
+
+
 class Kind(enum.IntEnum):
     """Expected form of a value described by a `StructureRule`."""
 

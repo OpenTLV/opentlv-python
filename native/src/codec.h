@@ -10,6 +10,7 @@
 #include <tlv/codec/number.h>
 #include <tlv/codec/text.h>
 #include <tlv/query/adapters.h>
+#include <tlv/schema/number.h>
 
 /* Stable kinds shared with opentlv.codec specifications. */
 enum opentlv_python_codec_kind {
@@ -24,7 +25,8 @@ enum opentlv_python_codec_kind {
     OPENTLV_PYTHON_CODEC_TEXT,
     OPENTLV_PYTHON_CODEC_DIGITS,
     OPENTLV_PYTHON_CODEC_IPV4,
-    OPENTLV_PYTHON_CODEC_IPV4_LIST
+    OPENTLV_PYTHON_CODEC_IPV4_LIST,
+    OPENTLV_PYTHON_CODEC_SCHEMA_NUMBER
 };
 
 /* One Core descriptor and the configuration it borrows. Descriptors point
@@ -35,7 +37,10 @@ typedef struct opentlv_python_codec {
         tlv_number_codec_config_t number;
         tlv_text_codec_config_t   text;
         tlv_digits_codec_config_t digits;
+        tlv_schema_number_t       schema_number;
     } config;
+    /* Field Schema of a schema number; its Tag borrows the specification. */
+    tlv_schema_entry_t entry;
     tlv_codec_t        configured;
     const tlv_codec_t* codec;
     /* uint64 view of a narrower unsigned codec for the Query adapter. */
@@ -44,8 +49,9 @@ typedef struct opentlv_python_codec {
 
 /* Raises _opentlv.Error with codec detail. */
 void opentlv_python_raise_codec(tlv_result_t code, const tlv_codec_diagnostic_t* diagnostic);
-/* Initializes from (kind, encoding or alphabet, width, digits or padding);
- * returns 0 with a Python error. */
+/* Initializes from (kind, encoding or alphabet, width, digits or padding),
+ * followed for a schema number by its (tag, min, max, flags, multiple) rule,
+ * which must outlive the codec; returns 0 with a Python error. */
 int opentlv_python_codec_init(opentlv_python_codec* self, PyObject* specification);
 /* Fills a Query adapter borrowing self and its scratch size; returns 0 with
  * a Python error for representations Query cannot adapt. */

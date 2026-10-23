@@ -4,6 +4,7 @@
 #define PY_SSIZE_T_CLEAN
 #include "format.h"
 #include "reader.h"
+#include <tlv/field/packed.h>
 #include <tlv/formats/escaped.h>
 #include <tlv/formats/fixed.h>
 #include <tlv/formats/packed.h>
@@ -439,4 +440,42 @@ PyObject* opentlv_python_format_compose(PyObject* module, PyObject* specificatio
     PyObject* capsule = PyCapsule_New(self, COMPOSED_CAPSULE, destroy);
     if (!capsule) release(self);
     return capsule;
+}
+
+/* packed_field((storage_size, bit_offset, bit_width, big_endian), data, value=None)
+ *
+ * Without a value, reads the field from data. With one, inserts it into the
+ * writable data in place; Core preserves every bit outside the field and
+ * leaves data unchanged on failure. */
+PyObject* opentlv_python_packed_field(PyObject* module, PyObject* args) {
+    (void)module;
+    Py_ssize_t   storage_size;
+    unsigned int bit_offset, bit_width;
+    int          big;
+    PyObject *   data, *value = Py_None;
+    if (!PyArg_ParseTuple(args, "(nIIp)O|O", &storage_size, &bit_offset, &bit_width, &big, &data,
+                          &value))
+        return NULL;
+    tlv_packed_field_t field;
+    if (!nonnegative(storage_size, &field.storage_size)) return NULL;
+    field.bit_offset = bit_offset;
+    field.bit_width = bit_width;
+    field.byte_order = byte_order(big);
+    uint64_t number = 0;
+    if (value != Py_None) {
+        number = PyLong_AsUnsignedLongLong(value);
+        if (PyErr_Occurred()) return NULL;
+    }
+    Py_buffer storage;
+    if (PyObject_GetBuffer(data, &storage, value == Py_None ? PyBUF_SIMPLE : PyBUF_WRITABLE) < 0)
+        return NULL;
+    tlv_result_t code =
+        value == Py_None ? tlv_packed_field_read(&field, storage.buf, (size_t)storage.len, &number)
+                         : tlv_packed_field_write(&field, storage.buf, (size_t)storage.len, number);
+    PyBuffer_Release(&storage);
+    if (code != TLV_OK) {
+        opentlv_python_raise_result(code);
+        return NULL;
+    }
+    return value == Py_None ? PyLong_FromUnsignedLongLong(number) : Py_NewRef(Py_None);
 }

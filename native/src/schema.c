@@ -3,8 +3,10 @@
 
 #include "schema.h"
 #include "reader.h"
+#include <tlv/schema/constraint.h>
 #include <tlv/schema/schema.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Temporary representation adaptation only; C owns lookup and validation. */
 PyObject* opentlv_python_length_schema(PyObject* module, PyObject* args) {
@@ -63,5 +65,78 @@ PyObject* opentlv_python_length_schema(PyObject* module, PyObject* args) {
     }
 done:
     free(entries);
+    return result;
+}
+
+enum { CONSTRAINT_CHECK, CONSTRAINT_VALIDATE, CONSTRAINT_NAME };
+
+/* value_constraint(operation, (kind, min, max, values, names), value=0)
+ *
+ * values is a tuple of ints and names None or a parallel tuple of str or
+ * None; the arrays borrow them for this call. Operation 0 checks the
+ * definition, 1 validates value and 2 returns its name or None. */
+PyObject* opentlv_python_value_constraint(PyObject* module, PyObject* args) {
+    (void)module;
+    int       operation, kind;
+    long long minimum, maximum, value = 0;
+    PyObject *values, *names;
+    if (!PyArg_ParseTuple(args, "i(iLLOO)|L", &operation, &kind, &minimum, &maximum, &values,
+                          &names, &value))
+        return NULL;
+    if (!PyTuple_Check(values) || (names != Py_None && !PyTuple_Check(names))) {
+        PyErr_SetString(PyExc_TypeError, "allowed values and names must be tuples");
+        return NULL;
+    }
+    size_t count = (size_t)PyTuple_Size(values);
+    if (names != Py_None && (size_t)PyTuple_Size(names) != count) {
+        PyErr_SetString(PyExc_ValueError, "allowed value names must parallel allowed values");
+        return NULL;
+    }
+    if (count > SIZE_MAX / sizeof(const char*)) return PyErr_NoMemory();
+    int64_t*     allowed = count ? calloc(count, sizeof *allowed) : NULL;
+    const char** labels = count && names != Py_None ? calloc(count, sizeof *labels) : NULL;
+    PyObject*    result = NULL;
+    if ((count && !allowed) || (count && names != Py_None && !labels)) {
+        PyErr_NoMemory();
+        goto done;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        allowed[i] = (int64_t)PyLong_AsLongLong(PyTuple_GetItem(values, (Py_ssize_t)i));
+        if (PyErr_Occurred()) goto done;
+        PyObject* label = labels ? PyTuple_GetItem(names, (Py_ssize_t)i) : Py_None;
+        if (label == Py_None) continue;
+        Py_ssize_t  size;
+        const char* text = PyUnicode_Check(label) ? PyUnicode_AsUTF8AndSize(label, &size) : NULL;
+        if (!text) {
+            if (!PyErr_Occurred()) PyErr_SetString(PyExc_TypeError, "names must be str or None");
+            goto done;
+        }
+        if (strlen(text) != (size_t)size) {
+            PyErr_SetString(PyExc_ValueError, "names must not contain NUL");
+            goto done;
+        }
+        labels[i] = text;
+    }
+    tlv_value_constraint_t constraint = {(tlv_value_constraint_kind_t)kind,
+                                         (int64_t)minimum,
+                                         (int64_t)maximum,
+                                         allowed,
+                                         count,
+                                         labels};
+    if (operation == CONSTRAINT_NAME) {
+        const char* name = tlv_value_constraint_name(&constraint, (int64_t)value);
+        result = name ? PyUnicode_FromString(name) : Py_NewRef(Py_None);
+        goto done;
+    }
+    tlv_result_t code = operation == CONSTRAINT_CHECK
+                            ? tlv_value_constraint_check(&constraint)
+                            : tlv_value_constraint_validate(&constraint, (int64_t)value);
+    if (code != TLV_OK)
+        opentlv_python_raise_result(code);
+    else
+        result = Py_NewRef(Py_None);
+done:
+    free(allowed);
+    free((void*)labels);
     return result;
 }

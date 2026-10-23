@@ -47,6 +47,36 @@
     {
       "reason": "`tlv_writer_write_element()` after the same argument and native-size checks, without diagnostics; `Writer.write_element()` re-encodes through `tlv_writer_write_element_diag()`.",
       "symbols": ["tlv_writer_copy_element"]
+    },
+    {
+      "reason": "NUL-terminated form of `tlv_query_parse_n()`; Python strings carry their length, so `Query` and `Document.find_path()` parse through `tlv_query_parse_n()`, which also rejects embedded NUL.",
+      "symbols": ["tlv_query_parse"]
+    },
+    {
+      "reason": "Callback implementations installed by bound descriptor initializers (`tlv_fixed_format_init()`, `tlv_fields_format_init()`, `tlv_tagged_fields_format_init()`, `tlv_tagged_binary_format_init()`, `tlv_escaped_format_init()`, `tlv_variable_format_init()` and `tlv_schema_number_codec()`); Core calls them through the descriptor, so Python has no separate path.",
+      "symbols": [
+        "tlv_binary_decode",
+        "tlv_binary_measure",
+        "tlv_binary_encode",
+        "tlv_fields_decode",
+        "tlv_fields_measure",
+        "tlv_fields_encode",
+        "tlv_tagged_binary_decode",
+        "tlv_tagged_binary_measure",
+        "tlv_tagged_binary_encode",
+        "tlv_tagged_fields_decode",
+        "tlv_tagged_fields_measure",
+        "tlv_tagged_fields_encode",
+        "tlv_escaped_decode",
+        "tlv_escaped_measure",
+        "tlv_escaped_encode",
+        "tlv_variable_decode",
+        "tlv_variable_measure",
+        "tlv_variable_encode",
+        "tlv_variable_is_constructed",
+        "tlv_schema_number_decode",
+        "tlv_schema_number_encode"
+      ]
     }
   ]
 }

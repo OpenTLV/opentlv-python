@@ -75,6 +75,22 @@ static int dict_set_bytes_or_none(PyObject* dict, const char* key, int has, cons
                         : Py_NewRef(Py_None));
 }
 
+/* Core's " > "-joined path text, or None without a tracked path. */
+static PyObject* path_text(const tlv_diagnostic_t* common) {
+    size_t length = 0;
+    if (!common->has_path) Py_RETURN_NONE;
+    /* The size query reports BUFFER_TOO_SHORT with the length; an invalid path has no text. */
+    tlv_result_t code = tlv_diagnostic_path_string(&common->path, NULL, 0, &length);
+    if (code != TLV_OK && code != TLV_ERR_BUFFER_TOO_SHORT) Py_RETURN_NONE;
+    char* text = PyMem_Malloc(length + 1);
+    if (!text) return PyErr_NoMemory();
+    code = tlv_diagnostic_path_string(&common->path, text, length + 1, &length);
+    PyObject* result =
+        code == TLV_OK ? PyUnicode_FromStringAndSize(text, (Py_ssize_t)length) : Py_NewRef(Py_None);
+    PyMem_Free(text);
+    return result;
+}
+
 static int common_fields(PyObject* result, const tlv_diagnostic_t* common) {
     if (!common) return 0;
     if (dict_set(result, "severity", PyLong_FromLong(common->severity)) < 0) return -1;
@@ -94,6 +110,7 @@ static int common_fields(PyObject* result, const tlv_diagnostic_t* common) {
     if (dict_set(result, "path", path) < 0 ||
         dict_set(result, "has_path", PyBool_FromLong(common->has_path)) < 0 ||
         dict_set(result, "path_omitted", PyLong_FromSize_t(common->path.omitted)) < 0 ||
+        dict_set(result, "path_text", path_text(common)) < 0 ||
         dict_set_str_or_none(result, "expected", common->expected) < 0 ||
         dict_set_str_or_none(result, "actual", common->actual) < 0) {
         return -1;
@@ -1103,6 +1120,47 @@ static PyObject* _opentlv_document_count(PyObject* module, PyObject* args) {
     return PyLong_FromSize_t(tlv_document_count(document));
 }
 
+static PyObject* _opentlv_document_revision(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject* capsule;
+    if (!PyArg_ParseTuple(args, "O", &capsule)) return NULL;
+    tlv_document_t* document = document_from_capsule(capsule);
+    if (document == NULL) return NULL;
+    return PyLong_FromUnsignedLongLong(tlv_document_revision(document));
+}
+
+static PyObject* _opentlv_document_retire_epoch(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject* capsule;
+    if (!PyArg_ParseTuple(args, "O", &capsule)) return NULL;
+    tlv_document_t* document = document_from_capsule(capsule);
+    if (document == NULL) return NULL;
+    return PyLong_FromUnsignedLongLong(tlv_document_retire_epoch(document));
+}
+
+/* document_node_identity(capsule, node) -> int; zero for an erased or foreign address,
+ * which C locates without dereferencing it. */
+static PyObject* _opentlv_document_node_identity(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject*   capsule;
+    tlv_node_t* node;
+    if (!PyArg_ParseTuple(args, "OO&", &capsule, py_to_node, &node)) return NULL;
+    tlv_document_t* document = document_from_capsule(capsule);
+    if (document == NULL) return NULL;
+    return PyLong_FromUnsignedLongLong(tlv_document_node_identity(document, node));
+}
+
+/* node_source_location(node) -> (offset | None, header_size | None) */
+static PyObject* _opentlv_node_source_location(PyObject* module, PyObject* args) {
+    (void)module;
+    tlv_node_t* node;
+    if (!PyArg_ParseTuple(args, "O&", py_to_node, &node)) return NULL;
+    tlv_document_source_location_t location = tlv_node_source_location(node);
+    return Py_BuildValue(
+        "(NN)", location.has_offset ? PyLong_FromSize_t(location.offset) : Py_NewRef(Py_None),
+        location.has_header_size ? PyLong_FromSize_t(location.header_size) : Py_NewRef(Py_None));
+}
+
 static PyObject* _opentlv_document_first(PyObject* module, PyObject* args) {
     (void)module;
     PyObject* capsule;
@@ -1139,9 +1197,15 @@ static PyObject* _opentlv_document_find(PyObject* module, PyObject* args) {
 /* document_find_path(capsule, query_text) -> int | None */
 static PyObject* _opentlv_document_find_path(PyObject* module, PyObject* args) {
     (void)module;
-    PyObject*   capsule;
-    const char* text;
-    if (!PyArg_ParseTuple(args, "Os", &capsule, &text)) {
+    PyObject*  capsule;
+    PyObject*  query_text;
+    Py_ssize_t length;
+    if (!PyArg_ParseTuple(args, "OU", &capsule, &query_text)) {
+        return NULL;
+    }
+    /* C rejects embedded NUL and non-ASCII bytes within the explicit length. */
+    const char* text = PyUnicode_AsUTF8AndSize(query_text, &length);
+    if (text == NULL) {
         return NULL;
     }
     tlv_document_t* document = document_from_capsule(capsule);
@@ -1150,10 +1214,10 @@ static PyObject* _opentlv_document_find_path(PyObject* module, PyObject* args) {
     }
     tlv_query_t      query;
     tlv_diagnostic_t parse = {0};
-    tlv_result_t     code = tlv_query_parse(text, &query, &parse);
+    tlv_result_t     code = tlv_query_parse_n(text, (size_t)length, &query, &parse);
     if (code != TLV_OK) {
         const tlv_query_diagnostic_t failure =
-            opentlv_binding_path_failure(code, &parse, text, strlen(text));
+            opentlv_binding_path_failure(code, &parse, text, (size_t)length);
         opentlv_python_raise_query(code, &failure);
         return NULL;
     }
@@ -1752,8 +1816,12 @@ static PyMethodDef opentlv_python_methods[] = {
      "Pull a finalized node with native revision checks."},
     {"length_schema", opentlv_python_length_schema, METH_VARARGS,
      "Find or validate a length rule through the canonical C schema engine."},
+    {"value_constraint", opentlv_python_value_constraint, METH_VARARGS,
+     "Check a value constraint, validate a decoded value or look up its name."},
     {"format_compose", opentlv_python_format_compose, METH_O,
      "Compose an owned Format from field encodings or a packed header."},
+    {"packed_field", opentlv_python_packed_field, METH_VARARGS,
+     "Read or insert one unsigned packed bit field."},
     {"format_capabilities", opentlv_python_format_capabilities, METH_O,
      "Report whether a Format can decode and encode."},
     {"format_decode", opentlv_python_format_decode, METH_VARARGS,
@@ -1850,6 +1918,14 @@ static PyMethodDef opentlv_python_methods[] = {
      "Parse a buffer into a new owned document."},
     {"document_count", _opentlv_document_count, METH_VARARGS,
      "Return the number of elements in a document, including nested ones."},
+    {"document_revision", _opentlv_document_revision, METH_VARARGS,
+     "Return the mutation revision of a document."},
+    {"document_retire_epoch", _opentlv_document_retire_epoch, METH_VARARGS,
+     "Return the node retirement epoch of a document."},
+    {"document_node_identity", _opentlv_document_node_identity, METH_VARARGS,
+     "Locate a possibly stale node address and return its identity, or zero."},
+    {"node_source_location", _opentlv_node_source_location, METH_VARARGS,
+     "Return a node's original (offset, header_size), None where unknown."},
     {"document_first", _opentlv_document_first, METH_VARARGS,
      "Return the first top-level node of a document, or None."},
     {"document_find", _opentlv_document_find, METH_VARARGS,

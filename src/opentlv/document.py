@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Iterator, Optional, Union
-from weakref import WeakValueDictionary
 
 import _opentlv as _native
 
@@ -22,27 +22,21 @@ _DEFAULT_MAX_ELEMENTS = 65536
 """TLV_DOCUMENT_DEFAULT_MAX_ELEMENTS."""
 
 
-class _Lifetime:
-    """Ownership metadata only; native C remains the source of node topology."""
+_NODE_KEY = object()
+"""Restricts Node construction to Document operations."""
 
-    __slots__ = ("parent", "parent_revision", "revision", "alive", "__weakref__")
 
-    def __init__(self, parent):
-        self.parent = parent
-        self.parent_revision = parent.revision if parent else 0
-        self.revision = 0
-        self.alive = True
+@dataclass(frozen=True)
+class SourceLocation:
+    """Original input coordinates of a parsed Node (`tlv_document_source_location_t`).
 
-    def valid(self):
-        token = self
-        while token is not None:
-            if not token.alive:
-                return False
-            parent = token.parent
-            if parent is not None and token.parent_revision != parent.revision:
-                return False
-            token = parent
-        return True
+    `offset` is the element start in the parsed input and `header_size` its
+    original header length; each is `None` when unknown. These are not
+    offsets in a later encoding.
+    """
+
+    offset: Optional[int]
+    header_size: Optional[int]
 
 
 class Node:
@@ -50,26 +44,36 @@ class Node:
 
     Erasing a node invalidates it and its descendants. Replacing a constructed
     value invalidates its old descendants, while the node itself stays valid.
-    Invalid access raises ValueError, including after Document.close(). A Node
-    keeps its document alive until explicitly closed or no longer reachable.
+    An applied Query edit invalidates every earlier node. Invalid access raises
+    ValueError, including after Document.close(). A Node keeps its document
+    alive until explicitly closed or no longer reachable.
     """
 
-    __slots__ = ("_document", "_address", "_lifetime", "_query_generation")
+    __slots__ = ("_document", "_address", "_identity", "_epoch", "_query_generation")
 
     def __init__(self, document: "Document", ptr: int, *, _key=None) -> None:
-        if _key is not document._lifetimes:
+        if _key is not _NODE_KEY:
             raise TypeError("nodes are obtained from Document operations")
+        if document._capsule is None:
+            raise ValueError("document is closed")
         self._document = document
         self._address = ptr
-        self._lifetime = document._lifetime(ptr)
+        self._identity = _native.node_identity(ptr)
+        self._epoch = _native.document_retire_epoch(document._capsule)
         self._query_generation = document._query_generation
 
     @property
     def _ptr(self):
-        if (self._document._capsule is None or
-                self._query_generation != self._document._query_generation or
-                not self._lifetime.valid()):
+        # Identities are never reused, so an unchanged retirement epoch proves
+        # the address live; otherwise C locates it without dereferencing it.
+        capsule = self._document._capsule
+        if capsule is None or self._query_generation != self._document._query_generation:
             raise ValueError("node is no longer valid")
+        epoch = _native.document_retire_epoch(capsule)
+        if epoch != self._epoch:
+            if _native.document_node_identity(capsule, self._address) != self._identity:
+                raise ValueError("node is no longer valid")
+            self._epoch = epoch
         return self._address
 
     @property
@@ -95,16 +99,9 @@ class Node:
         child."""
         self._document._assert_mutable()
         value = bytes(memoryview(value))
-        pointer = self._ptr
-        previous_revision = self._lifetime.revision
-        # Invalidate before entering C: a signal delivered immediately after C
-        # returns must not leave handles pointing at already released children.
-        self._lifetime.revision += 1
         try:
-            _native.node_set_value(pointer, value)
+            _native.node_set_value(self._ptr, value)
         except _native.Error as native_error:
-            # A reported native failure guarantees the old tree is unchanged.
-            self._lifetime.revision = previous_revision
             raise _from_native(native_error) from None
 
     @property
@@ -120,7 +117,18 @@ class Node:
     @property
     def identity(self) -> int:
         """Stable native identity in this Document; stale handles fail before access."""
-        return _native.node_identity(self._ptr)
+        self._ptr
+        return self._identity
+
+    @property
+    def source_location(self) -> SourceLocation:
+        """Original input coordinates, retained with `retain_source_locations=True`.
+
+        Replacing the value removes them from this node and its ancestors, and
+        inserting or erasing a child removes them from its ancestors; nodes
+        created by edits have none.
+        """
+        return SourceLocation(*_native.node_source_location(self._ptr))
 
     @property
     def next(self) -> Optional["Node"]:
@@ -150,9 +158,7 @@ class Node:
     def erase(self) -> None:
         """Removes this node and all of its descendants from its document."""
         self._document._assert_mutable()
-        pointer = self._ptr
-        self._lifetime.alive = False
-        _native.node_erase(pointer)
+        _native.node_erase(self._ptr)
 
     @property
     def encoded_size(self) -> int:
@@ -179,11 +185,11 @@ class Node:
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Node):
-            return self._lifetime is other._lifetime and self._document is other._document
+            return self._identity == other._identity and self._document is other._document
         return NotImplemented
 
     def __hash__(self) -> int:
-        return hash(self._lifetime)
+        return hash(self._identity)
 
     def __repr__(self) -> str:
         kind = "constructed" if self.is_constructed else "primitive"
@@ -209,7 +215,7 @@ class Document:
     b'\\x01\\x01\\xcc'
     """
 
-    __slots__ = ("_capsule", "_lifetimes", "_query_generation", "_query_active")
+    __slots__ = ("_capsule", "_query_generation", "_query_active")
 
     def __init__(self, data: Optional[bytes] = None, format: Format | None = None, *,
                  max_depth: int = _DEFAULT_MAX_DEPTH,
@@ -224,7 +230,6 @@ class Document:
         ancestors; unaffected nodes retain their original coordinates.
         """
         format = _format_specification(format)
-        self._lifetimes = WeakValueDictionary()
         self._query_generation = 0
         self._query_active = 0
         try:
@@ -240,25 +245,6 @@ class Document:
         if self._query_active:
             raise InvalidStateError(_native.RESULT_INVALID_STATE)
 
-    def _lifetime(self, ptr):
-        if self._capsule is None:
-            raise ValueError("document is closed")
-        # Only retained handles need ownership tokens. Read ancestry from C;
-        # this neither enumerates nor processes the document's elements.
-        pending = []
-        parent = None
-        while ptr is not None:
-            parent = self._lifetimes.get(ptr)
-            if parent is not None and parent.valid():
-                break
-            pending.append(ptr)
-            ptr = _native.node_parent(ptr)
-            parent = None
-        for address in reversed(pending):
-            parent = _Lifetime(parent)
-            self._lifetimes[address] = parent
-        return parent
-
     def _node_ptr(self, node):
         if node is None:
             return None
@@ -267,11 +253,20 @@ class Document:
         return node._ptr
 
     def _wrap(self, ptr: Optional[int]) -> Optional[Node]:
-        return None if ptr is None else Node(self, ptr, _key=self._lifetimes)
+        return None if ptr is None else Node(self, ptr, _key=_NODE_KEY)
 
     def __len__(self) -> int:
         """The number of elements in the document, including nested ones."""
         return _native.document_count(self._capsule)
+
+    @property
+    def revision(self) -> int:
+        """Mutation count: every successful insert, erase or value replacement increases it.
+
+        Failed edits keep it. Compare revisions to detect any change, including
+        edits that leave existing Nodes valid.
+        """
+        return _native.document_revision(self._capsule)
 
     @property
     def first(self) -> Optional[Node]:
@@ -429,7 +424,6 @@ class DocumentBuilder:
         """Consume available items; propagate C continuation or terminal errors."""
         # Allocate facade bookkeeping before C transfers ownership.
         document = Document.__new__(Document)
-        document._lifetimes = WeakValueDictionary()
         document._query_generation = 0
         document._query_active = 0
         try:

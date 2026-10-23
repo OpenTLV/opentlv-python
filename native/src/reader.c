@@ -48,18 +48,35 @@ PyObject* opentlv_python_source_preserve(PyObject* module, PyObject* args) {
         PyBuffer_Release(&value);
         return NULL;
     }
-    tlv_writer_t  writer = {NULL, output.buf, (size_t)output.len, (size_t)offset};
     tlv_element_t element = {tlv_tag(tag.buf, (size_t)tag.len), {value.buf, (tlv_size_t)value.len}};
-    tlv_writer_diagnostic_t diagnostic;
-    tlv_writer_diagnostic_init(&diagnostic);
-    tlv_result_t code = tlv_writer_preserve_diag(&writer, &self->source, &element, &diagnostic);
-    /* Convert while buffer-protocol exporters and all borrowed diagnostics are pinned. */
-    if (code != TLV_OK) opentlv_python_raise_writer(code, &diagnostic);
+    size_t        available = (size_t)(output.len - offset), written = 0;
+    tlv_result_t  code = tlv_source_preserve(&self->source, &element, (uint8_t*)output.buf + offset,
+                                             available, &written);
+    if (code != TLV_OK) {
+        /* Report the preservation like a Writer at `offset`; a shortage also has the size. */
+        tlv_writer_diagnostic_t diagnostic;
+        tlv_writer_diagnostic_init(&diagnostic);
+        diagnostic.diagnostic.code = code;
+        diagnostic.diagnostic.severity = TLV_DIAGNOSTIC_SEVERITY_ERROR;
+        diagnostic.diagnostic.location = (tlv_location_t){TLV_LOCATION_OUTPUT, TLV_LOCATION_POINT,
+                                                          (size_t)offset, (size_t)offset};
+        diagnostic.operation = TLV_WRITER_OP_PRESERVE;
+        diagnostic.has_tag = 1;
+        diagnostic.tag = element.tag;
+        diagnostic.has_length = 1;
+        diagnostic.length = (size_t)value.len;
+        diagnostic.has_available = 1;
+        diagnostic.available = available;
+        diagnostic.has_required = code == TLV_ERR_BUFFER_TOO_SHORT;
+        diagnostic.required = written;
+        /* Convert while buffer-protocol exporters and the borrowed Tag are pinned. */
+        opentlv_python_raise_writer(code, &diagnostic);
+    }
     PyBuffer_Release(&output);
     PyBuffer_Release(&tag);
     PyBuffer_Release(&value);
     if (code != TLV_OK) return NULL;
-    return PyLong_FromSize_t(writer.pos - (size_t)offset);
+    return PyLong_FromSize_t(written);
 }
 typedef struct cursor {
     PyObject*         input;
@@ -591,12 +608,7 @@ PyObject* opentlv_python_query_create(PyObject* module, PyObject* input) {
             free(self);
             return NULL;
         }
-        if (memchr(text, 0, (size_t)length)) {
-            free(self);
-            PyErr_SetString(PyExc_ValueError, "query text contains NUL");
-            return NULL;
-        }
-        code = tlv_query_parse(text, &self->query, &parse);
+        code = tlv_query_parse_n(text, (size_t)length, &self->query, &parse);
     } else {
         query_state* original = PyCapsule_GetPointer(input, QUERY_NAME);
         if (!original) {

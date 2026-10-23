@@ -12,9 +12,10 @@ Currently bound: `Reader`, `TreeReader`, `Query`/`QueryMatcher`, Visitors,
 `Writer`, `TreeWriter`, `Document`/`Node`, `DocumentBuilder`, `Element`, `Tag`,
 `Format`, `FixedFormat`, `ComposedFormat` with its field encodings,
 `LengthSchema`/`StructureSchema` with its `CheckedStructureSchema` handle,
-the `Generator` wire generator and the
+`ValueConstraint`, the `Generator` wire generator and the
 `OpenTLVError` exception hierarchy. The `codec` submodule exposes the generic
-C Value codecs (`NumberCodec`, `ValueCodec`, `TextCodec`, `DigitsCodec`), the
+C Value codecs (`NumberCodec`, `SchemaNumberCodec`, `ValueCodec`, `TextCodec`,
+`DigitsCodec`), the
 `StructureCodec` sequence binding and EMV amounts. Builtin protocol codecs
 remain a capability gap.
 """
@@ -23,9 +24,9 @@ from _opentlv import version_string
 
 from opentlv.definition import Definition, DefinitionRegistry
 from opentlv import codec
-from opentlv.codec import (DigitsCodec, NumberCodec, NumberEncoding, StructureCodec, TextAlphabet,
-                           TextCodec, ValueCodec)
-from opentlv.document import Document, DocumentBuilder, Node
+from opentlv.codec import (DigitsCodec, NumberCodec, NumberEncoding, SchemaNumberCodec,
+                           StructureCodec, TextAlphabet, TextCodec, ValueCodec)
+from opentlv.document import Document, DocumentBuilder, Node, SourceLocation
 from opentlv.element import Element
 from opentlv.location import Location
 from opentlv.error import (
@@ -64,7 +65,7 @@ from opentlv.reader import Reader, read, read_element
 from opentlv.cursor import Decoded, Layout, TreeItem, TreeEvent, TreeEventKind, TreeReader, Visit
 from opentlv.query import Query, QueryMatcher
 from opentlv.tree_writer import TreeWriter
-from opentlv.schema import CheckedStructureSchema, SchemaBounds, SchemaDiagnostic, SchemaDiagnosticReport, Kind, LengthRule, LengthSchema, SchemaOrder, UnknownPolicy, StructureGroup, StructureRule, StructureSchema
+from opentlv.schema import CheckedStructureSchema, SchemaBounds, SchemaDiagnostic, SchemaDiagnosticReport, Kind, LengthRule, LengthSchema, SchemaOrder, UnknownPolicy, StructureGroup, StructureRule, StructureSchema, ValueConstraint, ValueConstraintKind
 from opentlv.tag import Tag
 from opentlv.writer import Writer, element_encoded_size, encoded_size, write_element
 
@@ -137,9 +138,11 @@ __all__ = [
     "TreeReader",
     "TreeWriter",
     "Visit",
+    "SourceLocation",
     "Query",
     "QueryMatcher",
     "SchemaError",
+    "SchemaNumberCodec",
     "InvalidSchemaError",
     "StructureRule",
     "SchemaOrder",
@@ -155,6 +158,8 @@ __all__ = [
     "TextCodec",
     "UnsupportedError",
     "ValueCodec",
+    "ValueConstraint",
+    "ValueConstraintKind",
     "ValueOverflowError",
     "VariableIdentifier",
     "VariableLength",

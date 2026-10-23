@@ -6,6 +6,8 @@
 #include <Python.h>
 #include <tlv/schema/schema.h>
 PyObject* opentlv_python_length_schema(PyObject*, PyObject*);
+/* Checks a value constraint, validates a value or looks up its name. */
+PyObject* opentlv_python_value_constraint(PyObject*, PyObject*);
 /* Borrows a checked schema capsule's rule tree or builds one from a
  * serialized schema into *owned; NULL with a Python error. */
 const tlv_structure_schema_t* opentlv_python_schema_acquire(PyObject*                schema,

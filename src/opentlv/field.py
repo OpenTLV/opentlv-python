@@ -4,13 +4,18 @@
 """Field encodings that compose a Format, mirroring `tlv/field/*.h`.
 
 Each class is an immutable configuration. Core validates masks, widths,
-policies and their combination when a Format is composed from them; Python
-checks only types and representable ranges.
+policies and their combination when a Format is composed from them, and
+`PackedField` reads and writes its bits through Core directly; Python checks
+only types and representable ranges.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+import _opentlv as _native
+
+from opentlv.error import _from_native
 
 _BYTE_ORDERS = {"big": True, "little": False}
 _SIZE_MAX = 2 ** 64 - 1
@@ -168,7 +173,16 @@ class PackedField:
     """An unsigned bit field of a packed header (`tlv_packed_field_t`).
 
     `bit_offset` counts from the least significant header bit; the header
-    width and byte order are those of the enclosing packed Format.
+    width and byte order are those of the enclosing packed Format, or the
+    `header_size` and `byte_order` given to `read` and `write`.
+
+    >>> flags = PackedField(5, 3)
+    >>> flags.read(b"\\xa4", header_size=1)
+    5
+    >>> header = bytearray(b"\\xa4")
+    >>> flags.write(header, 2, header_size=1)
+    >>> header.hex()
+    '44'
     """
 
     bit_offset: int
@@ -177,6 +191,33 @@ class PackedField:
     def _native(self) -> tuple:
         return (_unsigned("bit_offset", self.bit_offset, 63),
                 _unsigned("bit_width", self.bit_width, 64))
+
+    def _storage(self, header_size: int, byte_order: str) -> tuple:
+        return (_unsigned("header_size", header_size), *self._native(), _big_endian(byte_order))
+
+    def read(self, data, *, header_size: int, byte_order: str = "big") -> int:
+        """Extract the field from the `header_size`-byte integer at the start of `data`.
+
+        Raises `TruncatedError` when `data` is shorter than the header and
+        `InvalidArgError` for a field that does not fit it.
+        """
+        try:
+            return _native.packed_field(self._storage(header_size, byte_order), data)
+        except _native.Error as error:
+            raise _from_native(error) from None
+
+    def write(self, data, value: int, *, header_size: int, byte_order: str = "big") -> None:
+        """Insert `value` into writable `data` in place, keeping every bit outside the field.
+
+        Raises `ValueOverflowError` when `value` does not fit `bit_width`
+        and `BufferTooShortError` when `data` is shorter than the header;
+        `data` is unchanged on failure.
+        """
+        value = _unsigned("value", value)
+        try:
+            _native.packed_field(self._storage(header_size, byte_order), data, value)
+        except _native.Error as error:
+            raise _from_native(error) from None
 
 
 @dataclass(frozen=True)

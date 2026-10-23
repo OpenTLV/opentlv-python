@@ -30,7 +30,10 @@ class OpenTLVError(Exception):
     the exact encoded size needed to grow the output buffer. `codec_detail`
     optionally carries conversion evidence; its delegated `schema` is an owned
     `SchemaDiagnostic`. `region` names the wire region ("header", "tag",
-    "length", "value" or "trailer") of a failed Format operation.
+    "length", "value" or "trailer") of a failed Format operation. A tracked
+    enclosing `path` of Tag bytes also has `path_text`, Core's
+    ``tlv_diagnostic_path_string()`` form such as ``"6F > A5"``; both are
+    `None` when no path was tracked.
     """
 
     def __init__(self, code: int, offset: Optional[int] = None, expected: Optional[str] = None,
@@ -198,6 +201,7 @@ def _from_native(error: "_native.Error") -> OpenTLVError:
     result.severity = Severity(fields.get("severity", 0))
     result.path = tuple(fields.get("path", ())) if fields.get("has_path", False) else None
     result.path_omitted = fields.get("path_omitted", 0)
+    result.path_text = fields.get("path_text")
     result.contexts = tuple(fields.get("contexts", ()))
     result.region = fields.get("region")
     result.codec_detail = fields.get("codec_detail")
