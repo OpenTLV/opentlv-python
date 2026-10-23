@@ -75,6 +75,13 @@ runtime-configurable fixed-width tag and length (equivalent to the C
 `tlv_fixed_format_t`). [Custom formats](#custom-formats) are composed from
 the generic field encodings.
 
+`Reader.read_source()` returns a `Decoded` with the original encoding and its
+`Layout`, which `Writer.preserve()` needs. `Reader.read_element()` pulls the
+next `Element` without building them, which is cheaper when only the content
+is inspected; its `length` is then empty. `opentlv.read(data)` and
+`opentlv.read_element(data)` decode one element without a Reader;
+`read_element` returns the element and the consumed byte count.
+
 Runnable version, parsing a nested BER document and handling truncated
 input:
 [parse.py](../../examples/parse.py)
@@ -101,12 +108,26 @@ one produced by a `Reader`, so reading and re-writing round-trips. Like
 `opentlv.encoded_size(tag, value_length, format=...)` computes an element's
 encoded size without writing it.
 
+`Writer(buffer=storage)` instead writes into caller-owned storage that never
+grows and cannot be resized while the Writer exists. `remaining` reports the
+space left. A write that does not fit raises `BufferTooShortError` with
+`required` and `available` and leaves the position and written output
+unchanged. `copy_encoded(data)` appends raw bytes, and `preserve(decoded)`
+appends an element read with `read_source()` in its original encoding after C
+checks that its content is unchanged.
+`opentlv.write_element(storage, element, format, offset=...)` encodes one
+element into caller storage without a Writer and returns its size;
+`opentlv.element_encoded_size(element, format)` measures it first.
+
 Runnable versions:
 [write.py](../../examples/write.py)
 builds a nested BER document bottom-up (`python examples/write.py`);
 [writer.py](../../examples/writer.py)
 shows the growable buffer handling a value far larger than its initial
-capacity, and a genuine format error (`python examples/writer.py`).
+capacity, and a genuine format error (`python examples/writer.py`);
+[stream.py](../../examples/stream.py)
+streams elements into a fixed buffer, preserving one unchanged and stopping
+when the buffer is full (`python examples/stream.py`).
 
 ## Custom formats
 
@@ -443,9 +464,11 @@ directly against the CPython C API (no pybind11, cffi or Cython) and the
 CPython Limited API, declaring and calling the public OpenTLV C API;
 `opentlv` wraps it and contains no C API calls of its own, the same split as
 the Rust `opentlv-sys`/`opentlv` crates. `Reader` and `TreeReader` retain native C cursors for incremental input and
-canonical traversal. `Writer` delegates each write to C and updates its Python
-position only after success. With `buffer=...`, output capacity is fixed;
-without it, the owned bytearray grows on a native capacity diagnostic.
+canonical traversal. `Writer` keeps one C `tlv_writer_t` session over an
+exported writable buffer, so its position and remaining capacity are C's. With
+`buffer=...`, output capacity is fixed; without it, a native capacity
+diagnostic moves the session to a larger owned bytearray, and C copies the
+written prefix.
 `StructureSchema`
 serializes its Python-owned rules (including nested `children` schemas) into
 an ephemeral C rule tree for the duration of one `structure_validate()` call,

@@ -87,7 +87,7 @@ the extension, but the matrix does not claim testing one identical wheel across
 all interpreter versions. Hosted runner architectures are recorded in evidence;
 these checks are not a manylinux/macOS deployment-target or publication policy.
 
-The inventory is 375 pytest cases, twelve examples and 171 shared Query
+The inventory is 384 pytest cases, thirteen examples and 171 shared Query
 fixtures / 664 checks. Intentional changes to tests or the pinned Core corpus
 must update this inventory with reviewed evidence. Skips, failures, empty suites
 and contradictory JUnit counts are rejected.
@@ -145,6 +145,8 @@ cppcheck `Py_RETURN_NONE` exception was removed; the remaining one moved with
 the checked-schema entry points.
 For #23, the number codec moved from `module.c` to `codec.c`, which moved the
 suppressed `module.c` lines up; the new `codec.c` needs no exception.
+For #29, the `module.c` changes follow the suppressed lines, which stay
+unchanged; the Writer session in `writer.c` needs no exception.
 
 ## Core API coverage
 
@@ -172,9 +174,13 @@ as such.
 ignore list. Each entry has a `reason` and matches header paths relative to
 `tlv/include` (`headers`) or symbol names (`symbols`); both accept `fnmatch`
 patterns. Ignored symbols are excluded from the counts. The current entries are
-the endian, tag, value, size and copy primitives, and the diagnostic producers
+the endian, tag, value, size and copy primitives, the diagnostic producers
 (`tlv_diagnostic_init`, setters, path builders, `tlv_location_set` and
-`tlv_location_resolve`). Diagnostic consumers such as the `*_string` lookups
+`tlv_location_resolve`), and Reader and Writer entry points that duplicate a
+bound path: wrappers that pass a NULL diagnostic to a bound `_diag`
+counterpart, the Tag/Value forms of the Element write functions, and
+`tlv_writer_copy_element`, which is `tlv_writer_write_element` without
+diagnostics. Diagnostic consumers such as the `*_string` lookups
 and `tlv_diagnostic_path_string` remain counted. Patterns that match nothing
 in the pinned Core are reported, so stale entries are visible after a pin bump.
 Change the ignore list only for symbols the binding intentionally leaves unbound.

@@ -60,13 +60,13 @@ from opentlv.fixed_format import FixedFormat
 from opentlv.format import Format
 from opentlv.format_operations import Encoding
 from opentlv.generator import Generator, GeneratorCandidate
-from opentlv.reader import Reader, read
+from opentlv.reader import Reader, read, read_element
 from opentlv.cursor import Decoded, Layout, TreeItem, TreeEvent, TreeEventKind, TreeReader, Visit
 from opentlv.query import Query, QueryMatcher
 from opentlv.tree_writer import TreeWriter
 from opentlv.schema import CheckedStructureSchema, SchemaBounds, SchemaDiagnostic, SchemaDiagnosticReport, Kind, LengthRule, LengthSchema, SchemaOrder, UnknownPolicy, StructureGroup, StructureRule, StructureSchema
 from opentlv.tag import Tag
-from opentlv.writer import Writer, element_encoded_size, encoded_size
+from opentlv.writer import Writer, element_encoded_size, encoded_size, write_element
 
 __version__ = version_string()
 from opentlv.program import (QueryProgram, QueryExecution, QueryMatch, QueryProvider,
@@ -128,6 +128,7 @@ __all__ = [
     "PackedField",
     "Reader",
     "read",
+    "read_element",
     "Decoded",
     "Layout",
     "TreeItem",
@@ -161,6 +162,7 @@ __all__ = [
     "Writer",
     "encoded_size",
     "element_encoded_size",
+    "write_element",
 ]
 
 from opentlv.diagnostic import (
