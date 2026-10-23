@@ -8,7 +8,8 @@ portable C99 library for reading, writing and validating TLV data.
 
 This package wraps `_opentlv`, a native extension that calls the public
 OpenTLV C API directly, into an idiomatic API. `Reader`, `Writer`,
-`Document`/`Node`, `Element`, `Tag`, `Format`, `LengthSchema`/`StructureSchema`,
+`Document`/`Node`, `Element`, `Tag`, `Format`, `LengthSchema`/`StructureSchema`
+(with a reusable `CheckedStructureSchema`),
 the `OpenTLVError` exception hierarchy and a narrow `codec` submodule (EMV
 amounts only) are bound so far:
 

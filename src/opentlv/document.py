@@ -298,6 +298,27 @@ class Document:
         except _native.Error as native_error:
             raise _from_native(native_error) from None
 
+    def visit(self, query, callback) -> None:
+        """Call callback(node) for every node a path query addresses, in Document order.
+
+        `query` is a `Query` or its text, for example `"6F/A5/50"`. Return
+        `Visit.CONTINUE`/`STOP`/`ERROR` or `None`. The document cannot be
+        modified or closed during callbacks; exceptions propagate after C returns.
+        """
+        from opentlv.query import Query
+        if not isinstance(query, Query):
+            query = Query(query)
+        if self._capsule is None:
+            raise ValueError("document is closed")
+        self._query_active += 1
+        try:
+            _native.document_query_visit(self._capsule, query._capsule,
+                                         lambda pointer: callback(self._wrap(pointer)))
+        except _native.Error as native_error:
+            raise _from_native(native_error) from None
+        finally:
+            self._query_active -= 1
+
     def insert(self, tag: Union[Tag, bytes], value: bytes = b"", parent: Optional[Node] = None,
                before: Optional[Node] = None) -> Node:
         """Inserts a new element with `tag` and `value`.

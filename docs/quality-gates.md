@@ -87,7 +87,7 @@ the extension, but the matrix does not claim testing one identical wheel across
 all interpreter versions. Hosted runner architectures are recorded in evidence;
 these checks are not a manylinux/macOS deployment-target or publication policy.
 
-The inventory is 339 pytest cases, ten examples and 171 shared Query
+The inventory is 350 pytest cases, eleven examples and 171 shared Query
 fixtures / 664 checks. Intentional changes to tests or the pinned Core corpus
 must update this inventory with reviewed evidence. Skips, failures, empty suites
 and contradictory JUnit counts are rejected.
@@ -129,8 +129,8 @@ desired Bash executable and run `tests/ci/test_shell.py` with pytest.
 
 The native migration has documented analyzer false positives in
 [`static-analysis-baseline.json`](../cmake/static-analysis-baseline.json).
-Only the affected checkers in `module.c` are excluded; cppcheck's two
-`Py_RETURN_NONE` reports are suppressed at their exact lines. The exclusions
+Only the affected checkers in `module.c` are excluded; cppcheck's remaining
+`Py_RETURN_NONE` report is suppressed at its exact line. The exclusions
 require the exact reviewed SHA-256 of each source file. Any source change fails
 until those exceptions are reassessed, so they cannot silently hide new code.
 Pointer-sized allocations of `PyObject*` arrays are explicitly permitted by
@@ -140,6 +140,9 @@ For #20, format specifications moved the suppressed `module.c` lines and
 removed the `writer.c` fixed-format initialization whose analyzer false
 positive needed an exception; clang-tidy 18 passes `writer.c` without one.
 For #21, the generator include moved the suppressed `module.c` lines down by one.
+For #22, structure validation returns an explicit `None` reference, so the first
+cppcheck `Py_RETURN_NONE` exception was removed; the remaining one moved with
+the checked-schema entry points.
 
 ## Core API coverage
 

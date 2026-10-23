@@ -629,6 +629,93 @@ PyObject* opentlv_python_query_rebind(PyObject* module, PyObject* args) {
     return Py_NewRef(Py_None);
 }
 
+PyObject* opentlv_python_query_format(PyObject* module, PyObject* capsule) {
+    (void)module;
+    query_state* self = PyCapsule_GetPointer(capsule, QUERY_NAME);
+    if (!self) return NULL;
+    size_t       required;
+    tlv_result_t code = tlv_query_format(&self->query, NULL, 0, &required);
+    char*        text = code == TLV_OK ? malloc(required) : NULL;
+    if (code == TLV_OK && !text) return PyErr_NoMemory();
+    if (code == TLV_OK) code = tlv_query_format(&self->query, text, required, &required);
+    PyObject* result =
+        code == TLV_OK ? PyUnicode_DecodeASCII(text, (Py_ssize_t)required - 1, NULL) : NULL;
+    free(text);
+    if (code != TLV_OK) opentlv_python_raise_result(code);
+    return result;
+}
+
+PyObject* opentlv_python_query_visit_buffer(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject * capsule, *specification, *callback;
+    Py_buffer  data;
+    Py_ssize_t max_depth, max_elements;
+    if (!PyArg_ParseTuple(args, "Oy*OnnO", &capsule, &data, &specification, &max_depth,
+                          &max_elements, &callback))
+        return NULL;
+    query_state*        self = PyCapsule_GetPointer(capsule, QUERY_NAME);
+    PyObject*           owner = NULL;
+    const tlv_format_t* format = self ? opentlv_python_format_resolve(specification, &owner) : NULL;
+    if (format && (max_depth < 0 || max_elements < 0 || !PyCallable_Check(callback))) {
+        PyErr_SetString(PyExc_ValueError, "nonnegative limits and a callable visitor required");
+        format = NULL;
+    }
+    if (!format) {
+        Py_XDECREF(owner);
+        PyBuffer_Release(&data);
+        return NULL;
+    }
+    tlv_reader_diagnostic_t diagnostic;
+    tlv_reader_diagnostic_init(&diagnostic);
+    /* The query is copied into each visit, so callbacks cannot change it. */
+    tlv_query_t  query = self->query;
+    tlv_result_t code =
+        tlv_query_visit_buffer(data.buf, (size_t)data.len, format, &query, (size_t)max_depth,
+                               (size_t)max_elements, visit_item, callback, &diagnostic);
+    Py_XDECREF(owner);
+    PyBuffer_Release(&data);
+    if (PyErr_Occurred()) return NULL;
+    if (code != TLV_OK) {
+        opentlv_python_raise_reader(code, &diagnostic);
+        return NULL;
+    }
+    return Py_NewRef(Py_None);
+}
+
+static tlv_visit_result_t visit_node(tlv_node_t* node, void* context) {
+    PyObject* address = PyLong_FromVoidPtr(node);
+    PyObject* result = address ? PyObject_CallFunctionObjArgs(context, address, NULL) : NULL;
+    Py_XDECREF(address);
+    if (!result) return TLV_VISIT_ERROR;
+    long action = result == Py_None ? TLV_VISIT_CONTINUE : PyLong_AsLong(result);
+    Py_DECREF(result);
+    if (PyErr_Occurred()) return TLV_VISIT_ERROR;
+    return action == 0 ? TLV_VISIT_CONTINUE : action == 1 ? TLV_VISIT_STOP : TLV_VISIT_ERROR;
+}
+
+PyObject* opentlv_python_document_query_visit(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject *document_capsule, *capsule, *callback;
+    if (!PyArg_ParseTuple(args, "OOO", &document_capsule, &capsule, &callback)) return NULL;
+    tlv_document_t* document = opentlv_python_document_pointer(document_capsule);
+    query_state*    self = document ? PyCapsule_GetPointer(capsule, QUERY_NAME) : NULL;
+    if (!self) return NULL;
+    if (!PyCallable_Check(callback)) {
+        PyErr_SetString(PyExc_TypeError, "visitor must be callable");
+        return NULL;
+    }
+    tlv_query_t            query = self->query;
+    tlv_query_diagnostic_t diagnostic;
+    tlv_result_t           code =
+        tlv_document_query_visit(document, &query, visit_node, callback, &diagnostic);
+    if (PyErr_Occurred()) return NULL;
+    if (code != TLV_OK) {
+        opentlv_python_raise_query(code, &diagnostic);
+        return NULL;
+    }
+    return Py_NewRef(Py_None);
+}
+
 PyObject* opentlv_python_query_visit(PyObject* module, PyObject* args) {
     (void)module;
     PyObject *capsule, *reader_capsule, *callback;

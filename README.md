@@ -72,7 +72,7 @@ See [build and verification details](docs/development/python.md).
 | `native/src/` | Existing native extension implementation |
 | `src/pyproject.toml`, `src/opentlv/` | Public `opentlv` distribution metadata and package sources |
 | `tests/python/` | Existing Python API tests |
-| `examples/` | Eight runnable examples, outside the installed package |
+| `examples/` | Eleven runnable examples, outside the installed package |
 | `native/common/` | Two binding-owned native adapters |
 | `scripts/check_python.py` | Installed-wheel, pytest, example and Query validation |
 | `tests/build/` | Dependency verification and public Core target tests |
