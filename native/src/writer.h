@@ -11,4 +11,10 @@ PyObject* opentlv_python_tree_writer_tags(PyObject*, PyObject*);
 PyObject* opentlv_python_tree_writer_event(PyObject*, PyObject*);
 PyObject* opentlv_python_tree_writer_action(PyObject*, PyObject*);
 PyObject* opentlv_python_tree_writer_measure(PyObject*, PyObject*);
+PyObject* opentlv_python_writer_create(PyObject*, PyObject*);
+PyObject* opentlv_python_writer_rebind(PyObject*, PyObject*);
+PyObject* opentlv_python_writer_write(PyObject*, PyObject*);
+PyObject* opentlv_python_writer_copy(PyObject*, PyObject*);
+PyObject* opentlv_python_writer_preserve(PyObject*, PyObject*);
+PyObject* opentlv_python_writer_status(PyObject*, PyObject*);
 #endif

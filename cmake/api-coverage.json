@@ -20,6 +20,33 @@
         "tlv_location_set",
         "tlv_location_resolve"
       ]
+    },
+    {
+      "reason": "Wrappers that call their bound `_diag` counterpart with a NULL diagnostic; Python always raises structured diagnostics, so they add no separate path.",
+      "symbols": [
+        "tlv_read",
+        "tlv_reader_next",
+        "tlv_reader_visit",
+        "tlv_tree_reader_next",
+        "tlv_tree_reader_next_event",
+        "tlv_element_encoded_size",
+        "tlv_write_element",
+        "tlv_writer_write_element",
+        "tlv_writer_copy_encoded",
+        "tlv_writer_preserve",
+        "tlv_tree_writer_begin",
+        "tlv_tree_writer_end",
+        "tlv_tree_writer_write_element",
+        "tlv_tree_writer_write_event"
+      ]
+    },
+    {
+      "reason": "Tag/Value forms that build a `tlv_element_t` and call the Element entry points; Python passes the Element to `tlv_write_element_diag()` and `tlv_writer_write_element_diag()` directly.",
+      "symbols": ["tlv_write", "tlv_write_diag", "tlv_writer_write", "tlv_writer_write_diag"]
+    },
+    {
+      "reason": "`tlv_writer_write_element()` after the same argument and native-size checks, without diagnostics; `Writer.write_element()` re-encodes through `tlv_writer_write_element_diag()`.",
+      "symbols": ["tlv_writer_copy_element"]
     }
   ]
 }

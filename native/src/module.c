@@ -1461,112 +1461,52 @@ static PyObject* _opentlv_node_encode(PyObject* module, PyObject* args) {
     return result;
 }
 
-/* read(data, offset, format) -> (tag: bytes, length_offset: int, length_size: int, value_offset:
- * int, value_length: int, consumed: int)
+/* read(data, format) -> (tag: bytes, value_offset: int, value_length: int, consumed: int) | None
  *
- * Parses one element at `offset` in `data` using wire format `format` (an
- * opentlv.Format value) and raises _opentlv.Error on failure. `data` is
- * any buffer-protocol object; `value_offset`/`value_length` describe the
- * value as a range within `data`, so the caller can slice it without
- * copying. */
+ * Parses one element at the start of `data` using wire format `format`
+ * without source metadata and raises _opentlv.Error on failure. `data` is any
+ * buffer-protocol object; `value_offset`/`value_length` describe the value as
+ * a range within `data`, so the caller can slice it without copying. Empty
+ * input returns None. */
 static PyObject* _opentlv_read(PyObject* module, PyObject* args) {
     (void)module;
-    Py_buffer  buffer;
-    Py_ssize_t offset;
-    PyObject*  specification;
-    if (!PyArg_ParseTuple(args, "y*nO", &buffer, &offset, &specification)) {
-        return NULL;
-    }
+    Py_buffer buffer;
+    PyObject* specification;
+    if (!PyArg_ParseTuple(args, "y*O", &buffer, &specification)) return NULL;
     PyObject*           owner;
     const tlv_format_t* format = opentlv_python_format_resolve(specification, &owner);
     if (format == NULL) {
         PyBuffer_Release(&buffer);
         return NULL;
     }
-    if (offset < 0 || offset > buffer.len) {
-        Py_DECREF(owner);
-        PyBuffer_Release(&buffer);
-        PyErr_SetString(PyExc_ValueError, "offset is out of range for data");
-        return NULL;
-    }
-
     const uint8_t*          base = (const uint8_t*)buffer.buf;
-    size_t                  size = (size_t)(buffer.len - offset);
     tlv_element_t           element;
     size_t                  consumed = 0;
     tlv_reader_diagnostic_t diag;
     tlv_reader_diagnostic_init(&diag);
-
-    tlv_source_t source;
-    tlv_result_t code =
-        tlv_read_source_diag(base + offset, size, format, &element, &consumed, &source, &diag);
-    if (code != TLV_OK) {
+    tlv_result_t code = tlv_read_diag(base, (size_t)buffer.len, format, &element, &consumed, &diag);
+    PyObject*    result = NULL;
+    if (code == TLV_END) {
+        result = Py_NewRef(Py_None);
+    } else if (code != TLV_OK) {
+        /* The diagnostic may borrow input bytes, so convert it before release. */
         raise_reader_error(code, &diag);
-        Py_DECREF(owner);
-        PyBuffer_Release(&buffer);
-        return NULL;
+    } else {
+        /* Core publishes a Value only inside the decoded input. */
+        PyObject* tag =
+            PyBytes_FromStringAndSize((const char*)element.tag.data, (Py_ssize_t)element.tag.size);
+        if (tag)
+            result = Py_BuildValue("(Nnnn)", tag, (Py_ssize_t)(element.value.data - base),
+                                   (Py_ssize_t)element.value.size, (Py_ssize_t)consumed);
     }
-
-    size_t value_length = 0;
-    code = tlv_size_to_native(element.value.size, &value_length);
-    if (code != TLV_OK) {
-        Py_DECREF(owner);
-        PyBuffer_Release(&buffer);
-        raise_code_only(code);
-        return NULL;
-    }
-    Py_ssize_t value_offset =
-        value_length == 0 ? 0 : (Py_ssize_t)((const uint8_t*)element.value.data - base);
-
-    Py_ssize_t length_offset =
-        source.length.size ? (Py_ssize_t)(source.data + source.length.offset - base) : 0;
-    PyObject* tag_obj =
-        PyBytes_FromStringAndSize((const char*)element.tag.data, (Py_ssize_t)element.tag.size);
     Py_DECREF(owner);
     PyBuffer_Release(&buffer);
-    if (tag_obj == NULL) {
-        return NULL;
-    }
-    PyObject* consumed_obj = PyLong_FromSize_t(consumed);
-    if (consumed_obj == NULL) {
-        Py_DECREF(tag_obj);
-        return NULL;
-    }
-
-    return Py_BuildValue("(NnnnnN)", tag_obj, length_offset, (Py_ssize_t)source.length.size,
-                         value_offset, (Py_ssize_t)value_length, consumed_obj);
-}
-
-/* Copy an unvalidated range with the sequential Writer capacity/diagnostic contract. */
-static PyObject* _opentlv_copy_encoded(PyObject* module, PyObject* args) {
-    (void)module;
-    Py_buffer  buffer, encoded;
-    Py_ssize_t offset;
-    if (!PyArg_ParseTuple(args, "w*ny*", &buffer, &offset, &encoded)) return NULL;
-    if (offset < 0 || offset > buffer.len) {
-        PyBuffer_Release(&buffer);
-        PyBuffer_Release(&encoded);
-        PyErr_SetString(PyExc_ValueError, "offset is out of range for buffer");
-        return NULL;
-    }
-    /* Raw copying deliberately does not use a Format. */
-    tlv_writer_t writer = {NULL, (uint8_t*)buffer.buf, (size_t)buffer.len, (size_t)offset};
-    tlv_writer_diagnostic_t diag;
-    tlv_writer_diagnostic_init(&diag);
-    tlv_result_t code = tlv_writer_copy_encoded_diag(&writer, (const uint8_t*)encoded.buf,
-                                                     (size_t)encoded.len, &diag);
-    PyBuffer_Release(&buffer);
-    PyBuffer_Release(&encoded);
-    if (code != TLV_OK) {
-        raise_writer_error(code, &diag);
-        return NULL;
-    }
-    return PyLong_FromSize_t(writer.pos - (size_t)offset);
+    return result;
 }
 
 /* write(buffer, offset, tag, value, format) -> written: int
  *
- * Encodes one element at `offset` in `buffer` using wire format `format` and
+ * Encodes one Element at `offset` in `buffer` using wire format `format` and
  * raises _opentlv.Error on failure, including insufficient capacity
  * (`code` 1, `required` set to the exact size needed). `buffer` must be a
  * writable buffer-protocol object (for example a bytearray); `tag` and
@@ -1591,15 +1531,15 @@ static PyObject* _opentlv_write(PyObject* module, PyObject* args) {
         return NULL;
     }
 
-    tlv_tag_t               tag = tlv_tag((const uint8_t*)tag_buf.buf, (size_t)tag_buf.len);
+    const tlv_element_t     element = {tlv_tag((const uint8_t*)tag_buf.buf, (size_t)tag_buf.len),
+                                       {(const uint8_t*)value_buf.buf, (tlv_size_t)value_buf.len}};
     uint8_t*                dest = (uint8_t*)buffer.buf + offset;
     size_t                  capacity = (size_t)(buffer.len - offset);
     size_t                  written = 0;
     tlv_writer_diagnostic_t diag;
     tlv_writer_diagnostic_init(&diag);
 
-    tlv_result_t code = tlv_write_diag(dest, capacity, format, tag, (const uint8_t*)value_buf.buf,
-                                       (size_t)value_buf.len, &written, &diag);
+    tlv_result_t code = tlv_write_element_diag(dest, capacity, format, &element, &written, &diag);
     if (code != TLV_OK) {
         tlv_location_translate(&diag.diagnostic.location, (size_t)offset);
         raise_writer_error(code, &diag);
@@ -1844,6 +1784,8 @@ static PyMethodDef opentlv_python_methods[] = {
     {"tree_writer_event", opentlv_python_tree_writer_event, METH_VARARGS,
      "Consume a structural event."},
     {"cursor_next", opentlv_python_cursor_next, METH_O, "Pull complete content and source ranges."},
+    {"cursor_read", opentlv_python_cursor_read, METH_O,
+     "Pull the next sequential element without source ranges."},
     {"cursor_input", opentlv_python_cursor_input, METH_VARARGS, "Replace a cursor input window."},
     {"cursor_status", opentlv_python_cursor_status, METH_O,
      "Return consumed bytes, absolute offset and final exhaustion."},
@@ -1867,11 +1809,23 @@ static PyMethodDef opentlv_python_methods[] = {
     {"result_string", _opentlv_result_string, METH_VARARGS,
      "Return the readable description of a tlv_result_t code."},
     {"read", _opentlv_read, METH_VARARGS,
-     "Parse one element at an offset in a buffer using a wire format."},
+     "Parse one element without source metadata using a wire format."},
+    {"read_source", opentlv_python_read_source, METH_VARARGS,
+     "Parse one element with its source ranges using a wire format."},
     {"write", _opentlv_write, METH_VARARGS,
      "Encode one element at an offset in a writable buffer using a wire format."},
-    {"copy_encoded", _opentlv_copy_encoded, METH_VARARGS,
-     "Copy raw bytes into caller storage without format conversion."},
+    {"writer_create", opentlv_python_writer_create, METH_VARARGS,
+     "Open a C Writer session over writable caller storage."},
+    {"writer_rebind", opentlv_python_writer_rebind, METH_VARARGS,
+     "Move a Writer session and its written prefix to larger owned storage."},
+    {"writer_write", opentlv_python_writer_write, METH_VARARGS,
+     "Append one element at the Writer session position."},
+    {"writer_copy", opentlv_python_writer_copy, METH_VARARGS,
+     "Append raw bytes at the Writer session position without format conversion."},
+    {"writer_preserve", opentlv_python_writer_preserve, METH_VARARGS,
+     "Append an unchanged original encoding at the Writer session position."},
+    {"writer_status", opentlv_python_writer_status, METH_O,
+     "Return the Writer session size and remaining capacity."},
     {"element_encoded_size", _opentlv_element_encoded_size, METH_VARARGS,
      "Measure exact output storage using semantic content."},
     {"encoded_size", _opentlv_encoded_size, METH_VARARGS,

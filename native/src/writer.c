@@ -3,6 +3,7 @@
 
 #include "writer.h"
 #include "format.h"
+#include "reader.h"
 #include <tlv/writer/tree.h>
 #include <stdlib.h>
 
@@ -308,4 +309,157 @@ PyObject* opentlv_python_tree_writer_measure(PyObject* module, PyObject* args) {
     Py_DECREF(source.iterator);
     self->busy = 0;
     return result;
+}
+
+#define SESSION_NAME "opentlv.writer"
+/* One tlv_writer_t over an exported writable buffer. The export pins storage, so
+ * its owner cannot resize it while the session borrows it. */
+typedef struct session_state {
+    tlv_writer_t writer;
+    tlv_format_t format;
+    PyObject*    format_owner;
+    Py_buffer    output;
+} session_state;
+
+static void release_session(session_state* self) {
+    PyBuffer_Release(&self->output);
+    Py_XDECREF(self->format_owner);
+    free(self);
+}
+
+static void destroy_session(PyObject* capsule) {
+    session_state* self = PyCapsule_GetPointer(capsule, SESSION_NAME);
+    if (self) release_session(self);
+}
+
+PyObject* opentlv_python_writer_create(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject *buffer, *specification;
+    if (!PyArg_ParseTuple(args, "OO", &buffer, &specification)) return NULL;
+    session_state* self = calloc(1, sizeof(*self));
+    if (!self) return PyErr_NoMemory();
+    self->format_owner = opentlv_python_format_owner(specification);
+    if (!self->format_owner || PyObject_GetBuffer(buffer, &self->output, PyBUF_WRITABLE) < 0) {
+        release_session(self);
+        return NULL;
+    }
+    self->format = *opentlv_python_format_pointer(self->format_owner);
+    tlv_result_t code =
+        tlv_writer_init(&self->writer, self->output.buf, (size_t)self->output.len, &self->format);
+    if (code != TLV_OK) {
+        release_session(self);
+        opentlv_python_raise_writer(code, NULL);
+        return NULL;
+    }
+    PyObject* capsule = PyCapsule_New(self, SESSION_NAME, destroy_session);
+    if (!capsule) release_session(self);
+    return capsule;
+}
+
+/* Move the session to larger owned storage; the written prefix is copied by C. */
+PyObject* opentlv_python_writer_rebind(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject *capsule, *buffer;
+    if (!PyArg_ParseTuple(args, "OO", &capsule, &buffer)) return NULL;
+    session_state* self = PyCapsule_GetPointer(capsule, SESSION_NAME);
+    if (!self) return NULL;
+    if (!PyByteArray_Check(buffer)) {
+        PyErr_SetString(PyExc_TypeError, "owned Writer storage must be a bytearray");
+        return NULL;
+    }
+    Py_buffer output;
+    if (PyObject_GetBuffer(buffer, &output, PyBUF_WRITABLE) < 0) return NULL;
+    tlv_writer_t            writer;
+    tlv_writer_diagnostic_t diagnostic;
+    tlv_writer_diagnostic_init(&diagnostic);
+    tlv_result_t code = tlv_writer_init(&writer, output.buf, (size_t)output.len, &self->format);
+    if (code == TLV_OK)
+        code = tlv_writer_copy_encoded_diag(&writer, self->output.buf,
+                                            tlv_writer_size(&self->writer), &diagnostic);
+    if (code != TLV_OK) {
+        PyBuffer_Release(&output);
+        opentlv_python_raise_writer(code, &diagnostic);
+        return NULL;
+    }
+    PyBuffer_Release(&self->output);
+    self->output = output;
+    self->writer = writer;
+    return Py_NewRef(Py_None);
+}
+
+/* writer_write(capsule, tag, value) appends one Element at the session position. */
+PyObject* opentlv_python_writer_write(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject* capsule;
+    Py_buffer tag, value;
+    if (!PyArg_ParseTuple(args, "Oy*y*", &capsule, &tag, &value)) return NULL;
+    session_state*          self = PyCapsule_GetPointer(capsule, SESSION_NAME);
+    tlv_result_t            code = TLV_OK;
+    tlv_writer_diagnostic_t diagnostic;
+    tlv_writer_diagnostic_init(&diagnostic);
+    if (self) {
+        tlv_element_t element = {tlv_tag(tag.buf, (size_t)tag.len),
+                                 {value.buf, (tlv_size_t)value.len}};
+        code = tlv_writer_write_element_diag(&self->writer, &element, &diagnostic);
+        /* The diagnostic borrows the Tag buffer, so convert it before release. */
+        if (code != TLV_OK) opentlv_python_raise_writer(code, &diagnostic);
+    }
+    PyBuffer_Release(&tag);
+    PyBuffer_Release(&value);
+    if (!self || code != TLV_OK) return NULL;
+    return Py_NewRef(Py_None);
+}
+
+/* writer_copy(capsule, encoded) appends raw bytes; overlap with the output is supported. */
+PyObject* opentlv_python_writer_copy(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject* capsule;
+    Py_buffer encoded;
+    if (!PyArg_ParseTuple(args, "Oy*", &capsule, &encoded)) return NULL;
+    session_state*          self = PyCapsule_GetPointer(capsule, SESSION_NAME);
+    tlv_result_t            code = TLV_OK;
+    tlv_writer_diagnostic_t diagnostic;
+    tlv_writer_diagnostic_init(&diagnostic);
+    if (self)
+        code = tlv_writer_copy_encoded_diag(&self->writer, encoded.buf, (size_t)encoded.len,
+                                            &diagnostic);
+    PyBuffer_Release(&encoded);
+    if (!self) return NULL;
+    if (code != TLV_OK) {
+        opentlv_python_raise_writer(code, &diagnostic);
+        return NULL;
+    }
+    return Py_NewRef(Py_None);
+}
+
+/* writer_preserve(capsule, source, tag, value) appends the original encoding unchanged. */
+PyObject* opentlv_python_writer_preserve(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject *capsule, *source_capsule;
+    Py_buffer tag, value;
+    if (!PyArg_ParseTuple(args, "OOy*y*", &capsule, &source_capsule, &tag, &value)) return NULL;
+    session_state*          self = PyCapsule_GetPointer(capsule, SESSION_NAME);
+    const tlv_source_t*     source = self ? opentlv_python_source_pointer(source_capsule) : NULL;
+    tlv_result_t            code = TLV_OK;
+    tlv_writer_diagnostic_t diagnostic;
+    tlv_writer_diagnostic_init(&diagnostic);
+    if (source) {
+        tlv_element_t element = {tlv_tag(tag.buf, (size_t)tag.len),
+                                 {value.buf, (tlv_size_t)value.len}};
+        code = tlv_writer_preserve_diag(&self->writer, source, &element, &diagnostic);
+        if (code != TLV_OK) opentlv_python_raise_writer(code, &diagnostic);
+    }
+    PyBuffer_Release(&tag);
+    PyBuffer_Release(&value);
+    if (!source || code != TLV_OK) return NULL;
+    return Py_NewRef(Py_None);
+}
+
+/* writer_status(capsule) -> (size, remaining) */
+PyObject* opentlv_python_writer_status(PyObject* module, PyObject* capsule) {
+    (void)module;
+    session_state* self = PyCapsule_GetPointer(capsule, SESSION_NAME);
+    if (!self) return NULL;
+    return Py_BuildValue("(nn)", (Py_ssize_t)tlv_writer_size(&self->writer),
+                         (Py_ssize_t)tlv_writer_remaining(&self->writer));
 }

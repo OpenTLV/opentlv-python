@@ -22,6 +22,8 @@ PyObject* opentlv_python_format_decode(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_create(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_event(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_next(PyObject*, PyObject*);
+PyObject* opentlv_python_cursor_read(PyObject*, PyObject*);
+PyObject* opentlv_python_read_source(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_input(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_status(PyObject*, PyObject*);
 PyObject* opentlv_python_cursor_skip(PyObject*, PyObject*);

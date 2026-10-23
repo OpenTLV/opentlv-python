@@ -5,8 +5,8 @@
     {"os": "windows-latest", "system": "Windows", "id": "windows"},
     {"os": "macos-latest", "system": "Darwin", "id": "macos"}
   ],
-  "pytest_cases": 375,
-  "examples": 12,
+  "pytest_cases": 384,
+  "examples": 13,
   "query_fixtures": 171,
   "query_checks": 664
 }

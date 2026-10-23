@@ -345,6 +345,65 @@ PyObject* opentlv_python_format_decode(PyObject* module, PyObject* args) {
     return result;
 }
 
+/* read_source(data: bytes, format) -> (tag, start, size, layout, source) | None */
+PyObject* opentlv_python_read_source(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject *input, *specification;
+    if (!PyArg_ParseTuple(args, "OO", &input, &specification)) return NULL;
+    if (!PyBytes_Check(input)) {
+        PyErr_SetString(PyExc_TypeError, "immutable bytes required");
+        return NULL;
+    }
+    PyObject*           owner;
+    const tlv_format_t* format = opentlv_python_format_resolve(specification, &owner);
+    if (!format) return NULL;
+    tlv_element_t           element;
+    tlv_source_t            source;
+    size_t                  consumed;
+    tlv_reader_diagnostic_t diagnostic;
+    tlv_reader_diagnostic_init(&diagnostic);
+    tlv_result_t code =
+        tlv_read_source_diag((const uint8_t*)PyBytes_AsString(input), (size_t)PyBytes_Size(input),
+                             format, &element, &consumed, &source, &diagnostic);
+    PyObject* result = NULL;
+    if (code == TLV_OK)
+        result = decoded_object(&element, &source, input, owner);
+    else if (code == TLV_END)
+        result = Py_NewRef(Py_None);
+    else
+        opentlv_python_raise_reader(code, &diagnostic);
+    Py_DECREF(owner);
+    return result;
+}
+
+/* cursor_read(capsule) -> (tag, value_start, value_size) | None, without source metadata. */
+PyObject* opentlv_python_cursor_read(PyObject* module, PyObject* capsule) {
+    (void)module;
+    cursor* self = PyCapsule_GetPointer(capsule, CURSOR_NAME);
+    if (!available(self)) return NULL;
+    if (self->nested) {
+        PyErr_SetString(PyExc_ValueError, "sequential Reader required");
+        return NULL;
+    }
+    tlv_element_t           element;
+    tlv_reader_diagnostic_t diagnostic;
+    tlv_reader_diagnostic_init(&diagnostic);
+    tlv_result_t code = tlv_reader_next_diag(&self->reader, &element, &diagnostic);
+    if (code == TLV_END) return Py_NewRef(Py_None);
+    if (code != TLV_OK) {
+        opentlv_python_raise_reader(code, &diagnostic);
+        return NULL;
+    }
+    PyObject* tag =
+        PyBytes_FromStringAndSize((const char*)element.tag.data, (Py_ssize_t)element.tag.size);
+    if (!tag) return NULL;
+    /* Core publishes a Value only inside the current input window. */
+    return Py_BuildValue(
+        "(Nnn)", tag,
+        (Py_ssize_t)(element.value.data - (const uint8_t*)PyBytes_AsString(self->input)),
+        (Py_ssize_t)element.value.size);
+}
+
 static PyObject* cursor_pull(PyObject* capsule, int events) {
     cursor* self = PyCapsule_GetPointer(capsule, CURSOR_NAME);
     if (!available(self)) return NULL;
