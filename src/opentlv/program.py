@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 from types import MappingProxyType
 import _opentlv as _native
+from opentlv.codec import NumberCodec
 from opentlv.cursor import TreeReader, Visit
 from opentlv.element import Element
 from opentlv.diagnostic import QueryErrorKind
@@ -44,6 +45,25 @@ class QueryProvider:
 
 
 @dataclass(frozen=True)
+class QueryCodecProvider:
+    """A conversion provider backed by a native Value codec, without Python callbacks.
+
+    C decodes complete Values through ``tlv_query_codec_decode``. A
+    ``NumberCodec`` yields unsigned integers; a value above the signed 64-bit
+    range fails as an invalid Value with codec detail. The nonzero uint32 ID
+    must stay stable for the codec configuration, as for ``QueryProvider``.
+    """
+    id: int
+    codec: NumberCodec
+
+    def __post_init__(self):
+        if type(self.id) is not int or not 0 < self.id <= 0xffffffff:
+            raise ValueError("provider ID must be nonzero uint32")
+        if not isinstance(self.codec, NumberCodec):
+            raise TypeError("NumberCodec required")
+
+
+@dataclass(frozen=True)
 class QueryTagAdapter:
     """Explicit semantic Tag decomposition; callbacks receive copied raw bytes.
 
@@ -59,6 +79,24 @@ class QueryTagAdapter:
             raise ValueError("tag adapter ID must be nonzero uint32")
         if any(value is not None and not callable(value) for value in (self.class_of, self.number_of)):
             raise TypeError("Tag decomposition callbacks must be callable or None")
+
+
+def _provider(provider):
+    if isinstance(provider, QueryCodecProvider):
+        codec = provider.codec
+        return (provider.id, int(codec.encoding), codec.width, codec.digits)
+    return (provider.id, provider.max_result_bytes,
+            lambda value, metadata, decode=provider.decode:
+            decode(value, None if metadata is None else _match(metadata)))
+
+
+def _info(function, capsule):
+    info = _call(function, capsule)
+    info["variables"] = tuple(info["variables"])
+    return MappingProxyType(info)
+
+
+_COMPILE, _LOAD, _PLAN = range(3)
 
 
 def query_emv_resolve(namespace, name):
@@ -112,9 +150,9 @@ class QueryProgram:
     def __init__(self, text, *, format=None, variables=None, names=None, **options):
         if not isinstance(text, str):
             raise TypeError("Query text must be str")
-        self._initialize(text.encode("utf-8"), format, variables, names, options, False)
+        self._initialize(text.encode("utf-8"), format, variables, names, options, _COMPILE)
 
-    def _initialize(self, data, format, variables, names, options, image):
+    def _initialize(self, data, format, variables, names, options, mode):
         self._format = _resolve_format(format)
         if isinstance(self._format, FixedFormat):
             self._format = FixedFormat(self._format.tag_size, self._format.length_size,
@@ -125,8 +163,9 @@ class QueryProgram:
             raise ValueError("variable names must be NUL-free str")
         self._names = {name: bytes(tag.data if isinstance(tag, Tag) else tag)
                        for name, tag in (names or {}).items()}
-        allowed = {"max_text", "max_tokens", "max_nesting", "max_states", "max_pattern",
-                   "max_resolved_tag", "optimize", "providers", "tags", "resolve"}
+        allowed = {"providers", "tags"} if mode == _PLAN else {
+            "max_text", "max_tokens", "max_nesting", "max_states", "max_pattern",
+            "max_resolved_tag", "optimize", "providers", "tags", "resolve"}
         if options.keys() - allowed:
             raise TypeError(f"unknown compile options: {options.keys() - allowed}")
         self._options = dict(options)
@@ -142,30 +181,52 @@ class QueryProgram:
         if "providers" in self._options:
             selectors = {"num": 0, "bcd": 1, "text": 2, "date": 3}
             providers = self._options["providers"]
-            if any(name not in selectors or not isinstance(provider, QueryProvider)
+            if any(name not in selectors or
+                   not isinstance(provider, (QueryProvider, QueryCodecProvider))
                    for name, provider in providers.items()):
-                raise TypeError("providers map num/bcd/text/date to QueryProvider")
+                raise TypeError("providers map num/bcd/text/date to QueryProvider "
+                                "or QueryCodecProvider")
             self._options["providers"] = {
-                selectors[name]: (provider.id, provider.max_result_bytes,
-                                  lambda value, metadata, decode=provider.decode:
-                                  decode(value, None if metadata is None else _match(metadata)))
-                for name, provider in providers.items()}
+                selectors[name]: _provider(provider) for name, provider in providers.items()}
         self._capsule = _call(_native.program_create, data, _format_specification(self._format),
-                              self._declarations, self._names, self._options, image)
+                              self._declarations, self._names, self._options, mode)
 
     @classmethod
     def load(cls, image, *, format=None, variables=None, names=None, **options):
         """Validate and own a copy of a same-release image with original compile options."""
         result = cls.__new__(cls)
-        result._initialize(bytes(image), format, variables, names, options, True)
+        result._initialize(bytes(image), format, variables, names, options, _LOAD)
+        return result
+
+    @classmethod
+    def open_plan(cls, image, *, format=None, providers=None, tags=None):
+        """Validate and own a copy of a native plan without the Query frontend.
+
+        C checks the plan structure only: no recompilation, name resolution or
+        variable declarations. The plan's variables and its provider and Tag
+        adapter IDs are still required by execution, so supply the providers
+        and ``tags`` the plan was built with. Plans are release- and
+        byte-order-specific native layouts, not a serialization format.
+        """
+        options = {key: value for key, value in (("providers", providers), ("tags", tags))
+                   if value is not None}
+        result = cls.__new__(cls)
+        result._initialize(bytes(image), format, None, None, options, _PLAN)
         return result
 
     @property
     def info(self):
         """Immutable whole-expression requirements and referenced variable types."""
-        info = _call(_native.program_info, self._capsule)
-        info["variables"] = tuple(info["variables"])
-        return MappingProxyType(info)
+        return _info(_native.program_info, self._capsule)
+
+    @property
+    def plan_info(self):
+        """Requirements read from the validated plan itself, without the frontend.
+
+        Compiler scratch and optimization-history fields are zero; execution
+        requirements equal ``info``.
+        """
+        return _info(_native.program_plan_info, self._capsule)
 
     def format(self):
         """Canonical language spelling from C."""
@@ -289,11 +350,16 @@ class QueryExecution:
             raise ReferenceError("Query Document has been closed")
 
     def reset(self):
-        """Discard continuation, borrowed windows, bindings and Document snapshot."""
+        """Discard continuation, borrowed windows, bindings and Document snapshot.
+
+        C resets the execution in place, keeping its program, providers,
+        workspace and budgets; callbacks cannot reset their own execution.
+        """
         if hasattr(self, "_capsule"):
-            _call(_native.execution_info, self._capsule)  # Reject callback reentry.
-        self._capsule = _call(_native.execution_create, self._program._capsule,
-                              *self._limits, self._retained, self._workspace)
+            _call(_native.execution_reset, self._capsule)
+        else:
+            self._capsule = _call(_native.execution_create, self._program._capsule,
+                                  *self._limits, self._retained, self._workspace)
         self._document = None
 
     def bind(self, name, value):
@@ -362,11 +428,16 @@ class QueryExecution:
                      None, 2 if early_return else 1)
 
     def evaluate_document(self, document, *, context=None, value_capacity=None):
-        """Finalize against an immutable Document revision with explicit Value storage."""
+        """Finalize against an immutable Document revision.
+
+        ``value_capacity`` bounds the encoded Value snapshot that programs
+        reading constructed Values need. By default C measures the snapshot
+        (``tlv_document_query_value_size``) only for such programs.
+        """
         self._check()
         if document._capsule is None:
             raise ReferenceError("Query Document has been closed")
-        capacity = document.encoded_size if value_capacity is None else value_capacity
+        capacity = -1 if value_capacity is None else value_capacity
         document._query_active += 1
         try:
             _call(_native.execution_document, self._capsule, document._capsule,
@@ -375,6 +446,24 @@ class QueryExecution:
             document._query_active -= 1
         self._document = document
         return self
+
+    def visit_document(self, callback):
+        """Call callback(node) for the remaining finalized Document results, in order.
+
+        Return Visit.CONTINUE/STOP/ERROR or None; STOP resumes after the
+        delivered node on the next visit or pull. The Document cannot be
+        edited or closed during callbacks; exceptions propagate after C returns.
+        """
+        self._check()
+        if self._document is None:
+            raise ValueError("evaluate_document must precede visiting")
+        document = self._document
+        document._query_active += 1
+        try:
+            _call(_native.execution_document_visit, self._capsule,
+                  lambda pointer: callback(document._wrap(pointer)))
+        finally:
+            document._query_active -= 1
 
     def result(self):
         """Return an owned finalized scalar; node results use next()."""

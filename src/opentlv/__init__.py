@@ -11,7 +11,8 @@ bindings](https://github.com/marekcingel/OpenTLV/blob/main/docs/concepts/binding
 Currently bound: `Reader`, `TreeReader`, `Query`/`QueryMatcher`, Visitors,
 `Writer`, `TreeWriter`, `Document`/`Node`, `DocumentBuilder`, `Element`, `Tag`,
 `Format`, `FixedFormat`, `ComposedFormat` with its field encodings,
-`LengthSchema`/`StructureSchema`, the `Generator` wire generator and the
+`LengthSchema`/`StructureSchema` with its `CheckedStructureSchema` handle,
+the `Generator` wire generator and the
 `OpenTLVError` exception hierarchy. The `codec` submodule exposes configured numeric codecs and EMV amounts.
 Other public C codecs remain a capability gap.
 """
@@ -60,22 +61,25 @@ from opentlv.reader import Reader, read
 from opentlv.cursor import Decoded, Layout, TreeItem, TreeEvent, TreeEventKind, TreeReader, Visit
 from opentlv.query import Query, QueryMatcher
 from opentlv.tree_writer import TreeWriter
-from opentlv.schema import SchemaBounds, SchemaDiagnostic, SchemaDiagnosticReport, Kind, LengthRule, LengthSchema, SchemaOrder, UnknownPolicy, StructureGroup, StructureRule, StructureSchema
+from opentlv.schema import CheckedStructureSchema, SchemaBounds, SchemaDiagnostic, SchemaDiagnosticReport, Kind, LengthRule, LengthSchema, SchemaOrder, UnknownPolicy, StructureGroup, StructureRule, StructureSchema
 from opentlv.tag import Tag
 from opentlv.writer import Writer, element_encoded_size, encoded_size
 
 __version__ = version_string()
-from opentlv.program import (QueryProgram, QueryExecution, QueryMatch, QueryProvider, QueryRule,
-                             QuerySchema, QueryTagAdapter, QueryDefinitionResolver, query_emv_resolve)
+from opentlv.program import (QueryProgram, QueryExecution, QueryMatch, QueryProvider,
+                             QueryCodecProvider, QueryRule, QuerySchema, QueryTagAdapter,
+                             QueryDefinitionResolver, query_emv_resolve)
 
 __all__ = [
     "ReaderOperation", "WriterOperation", "QueryErrorKind", "QueryCause", "SchemaIssue",
     "SchemaDefinitionKind", "SchemaCause", "CodecOperation", "CodecCause", "CodecViolation",
     "CodecReason", "Severity",
-    "QueryProgram", "QueryExecution", "QueryMatch", "QueryProvider", "QueryRule", "QuerySchema",
+    "QueryProgram", "QueryExecution", "QueryMatch", "QueryProvider", "QueryCodecProvider",
+    "QueryRule", "QuerySchema",
     "QueryTagAdapter", "QueryDefinitionResolver", "query_emv_resolve",
     "__version__",
     "BufferTooShortError",
+    "CheckedStructureSchema",
     "ComposedFormat",
     "ConstructedBit",
     "Document",

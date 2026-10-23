@@ -7,7 +7,8 @@ studying native C implementation contracts.
 The `opentlv` package is an experimental Python binding for OpenTLV. It binds
 `Reader`, `Writer`, `Document`/`Node`, `Element`, `Tag`, `Format` (including
 [custom composed formats](#custom-formats)),
-`LengthSchema`/`StructureSchema` and the `OpenTLVError` exception hierarchy,
+`LengthSchema`/`StructureSchema` (with a reusable `CheckedStructureSchema`),
+compiled Query programs and the `OpenTLVError` exception hierarchy,
 plus a narrow `codec` submodule (see [Codec](#codec)). For layout and build
 details, see [Python bindings](../development/python.md).
 
@@ -229,10 +230,32 @@ violations, including lengths and required absence. Inspect `kind` and `anchor`
 with the optional `offset`: missing content has `kind="missing"`, while an
 invalid definition has no input offset.
 
+Every `validate()` call checks the whole definition again before reading
+input. To validate many inputs against one schema, `schema.check()` checks the
+definition once through `tlv_schema_prepare()` and returns a
+`CheckedStructureSchema`. Its `validate()` and `validate_diagnostics()` take the
+same arguments, run `tlv_schema_validate_checked()` and
+`tlv_schema_validate_all_checked()`, and never raise `InvalidSchemaError`;
+runtime limits are still checked on every call. The handle owns a native copy
+of the whole schema graph taken at `check()`, so later changes to the
+`StructureSchema` or its rules do not affect it; check again after changing
+the definition. `schema.check_definition()` runs only the definition check
+(`tlv_schema_check()`) and raises the same `InvalidSchemaError`, with
+`definition_index`, as `check()`.
+
+```python
+checked = schema.check()
+for message in messages:
+    checked.validate(message, format=Format.BER)
+```
+
 Runnable version, validating the document `parse.py` reads, and rejecting an
 incomplete one:
 [validate.py](../../examples/validate.py)
 (`python examples/validate.py`).
+[batch.py](../../examples/batch.py) validates a batch of messages against a
+checked schema and evaluates one compiled Query over each
+(`python examples/batch.py`).
 
 ## Generic Definition registries
 
@@ -293,7 +316,11 @@ encoding order), `node.first_child`/`for child in node` (a constructed
 node's children), `node.next`/`node.parent`, or search with
 `document.find(tag, parent=...)`, `node.find(tag)` or
 `document.find_path("6F/A5/50")`, a [path query](https://github.com/OpenTLV/opentlv/blob/5e0aae9c77e9c22d07c7f03d6110243e9ecad85f/docs/guides/queries.md) (a `/`-separated
-path of hexadecimal tags).
+path of hexadecimal tags). `document.visit(query, callback)` calls
+`callback(node)` for every node the path query addresses, in Document order,
+through `tlv_document_query_visit()`; `query` is a `Query` or its text, and the
+callback returns `Visit.CONTINUE`, `STOP`, `ERROR` or `None`. The document
+cannot be modified or closed during the callbacks.
 `document.insert(tag, value, parent=..., before=...)` inserts a new element;
 assigning `node.value` replaces one. For both, a value of a tag the
 document's reader format treats as constructed (BER, CER and DER, by their
@@ -369,8 +396,9 @@ without it, the owned bytearray grows on a native capacity diagnostic.
 `StructureSchema`
 serializes its Python-owned rules (including nested `children` schemas) into
 an ephemeral C rule tree for the duration of one `structure_validate()` call,
-built and freed with plain `malloc`/`free`, rather than keeping a persistent
-native handle across calls the way it would for a schema reused many times;
+built and freed with plain `malloc`/`free`; `CheckedStructureSchema` instead
+keeps that tree and its `tlv_schema_checked_t` handle in a capsule for as long
+as it lives;
 `LengthSchema` likewise marshals its rules and delegates lookup and length
 constraints to `tlv_schema_find` and `tlv_schema_validate_length`. Rule flags
 and length multiples use the same C semantics. `codec.decode_amount`/
@@ -410,7 +438,20 @@ immutable compiled C program. `QueryProgram.load(image, ...)` validates a
 same-release image using its original options; `image()`, `format()` and
 `explain()` expose copies or descriptions. `info` reports native requirements.
 Declarations accept `int`, `bytes` and `str`; bind actual values through an
-independent execution rather than interpolating Query text.
+independent execution rather than interpolating Query text. Compile a program
+once and reuse it for any number of executions and inputs.
+
+With static `names`, or none, compilation sizes and writes the program with
+`tlv_query_compile()`; a `resolve` callback uses checked preparation and
+commit instead, described below. Both produce the same image.
+`QueryProgram.open_plan(image, format=..., providers=..., tags=...)` opens an
+existing image with `tlv_query_plan_open()`, which validates its structure
+without the Query frontend: no recompilation, name resolution or variable
+declarations. Execution still requires the plan's variables and the provider
+and Tag adapter IDs it was built with; missing ones raise `UnsupportedError`
+when an execution is created. `plan_info` reads requirements from the plan
+itself through `tlv_query_plan_info()`; its compiler scratch and
+optimization-history fields are zero.
 
 All Formats, including configured `FixedFormat` and composed formats, work
 with Query, Reader and Document. Compilation snapshots Fixed widths and byte
@@ -433,8 +474,10 @@ when that component is enabled, for example
 owns bounded native state. `retained=False` selects S0/S1 storage. Execute through
 the public TreeReader pull/Visitor adapter, or evaluate a Document; results,
 diagnostics, limits and continuation delegate to C. Match snapshots own their
-bytes. Reset separates input/binding lifetimes; callback exceptions require
-reset before reuse. Programs and executions retain their native owners until
+bytes. `reset()` resets the execution in place through `tlv_query_exec_reset()`,
+keeping its program, providers, workspace and budgets and releasing pinned
+inputs, bindings and the Document snapshot; callback exceptions require reset
+before reuse. Programs and executions retain their native owners until
 the Python objects are collected.
 The [consumer tests](../../tests/python/test_program.py) and
 [common corpus runner](../../tests/query/python_facade.py) exercise these APIs.
@@ -445,13 +488,22 @@ and optional copied `QueryMatch` metadata; return an integer or, for `text`, a
 string. Text providers require `max_result_bytes` for native bounded scratch.
 Keep provider IDs and contracts stable when loading images. Callback exceptions
 propagate; callback allocations and work are outside the C engine's limits.
+`QueryCodecProvider(id, NumberCodec(...))` decodes Values natively through
+`tlv_query_codec_decode()`, without Python callbacks, for `num`, `bcd` or
+`date`. The codec yields an unsigned integer; a value above the signed 64-bit
+range raises `InvalidValueError` with codec detail.
 
 `execution.feed(event)` accepts canonical Tree events. Retain borrowed input as
 documented by the event producer; the execution pins the event bytes and original
 Source, preserving Layout metadata predicates. Call `finish()` before pulling
 deferred results. `next_ordinal()` returns an owned `(QueryMatch, ordinal)` from
 a completed retained selection, including Document selections; `next()` retains
-its checked Node behavior for Documents. `edit_document("remove" | "replace" | "insert_after", ...)` applies a
+its checked Node behavior for Documents. After `evaluate_document()`,
+`visit_document(callback)` calls `callback(node)` for the remaining node
+results; STOP resumes after the delivered node on the next pull or visit.
+Programs that read constructed Values need an encoded Document snapshot; by
+default `tlv_document_query_value_size()` measures it only for those programs,
+and an explicit `value_capacity` that is too small raises `LimitError`. `edit_document("remove" | "replace" | "insert_after", ...)` applies a
 completed Document selection. `target_capacity` bounds target storage; a short
 target array reports `error.applied == 0` and allows retry. Successful edits
 invalidate existing checked Nodes; other edit failures report partial counts.
@@ -469,6 +521,10 @@ TreeReader input replacement. `rebind(equivalent_query)` copies an equivalent
 path without restarting a suspended traversal; a different path fails without
 changing state. `reset()` starts a new traversal and leaves Reader state to the
 caller. `matches(tag, depth)` feeds every canonical preorder item manually.
+`Query.format()` and `str(query)` return the canonical uppercase spelling, and
+`query.visit_buffer(data, callback, format, max_depth=..., max_elements=...)`
+visits matches in complete input through `tlv_query_visit_buffer()`, without a
+Reader or matcher.
 
 ## Next step
 

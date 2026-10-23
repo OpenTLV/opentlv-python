@@ -31,4 +31,7 @@ PyObject* opentlv_python_query_steps(PyObject*, PyObject*);
 PyObject* opentlv_python_query_matches(PyObject*, PyObject*);
 PyObject* opentlv_python_query_rebind(PyObject*, PyObject*);
 PyObject* opentlv_python_query_visit(PyObject*, PyObject*);
+PyObject* opentlv_python_query_format(PyObject*, PyObject*);
+PyObject* opentlv_python_query_visit_buffer(PyObject*, PyObject*);
+PyObject* opentlv_python_document_query_visit(PyObject*, PyObject*);
 #endif

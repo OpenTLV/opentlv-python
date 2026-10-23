@@ -616,16 +616,21 @@ static PyObject* schema_diagnostic_value(const tlv_schema_diagnostic_t* diagnost
 }
 
 static PyObject* schema_diagnostic_report(const Py_buffer* buffer, const tlv_format_t* format,
-                                          const tlv_structure_schema_t* schema, size_t max_depth,
+                                          const tlv_structure_schema_t* schema,
+                                          const tlv_schema_checked_t* checked, size_t max_depth,
                                           size_t max_elements, size_t capacity,
                                           tlv_schema_unknown_policy_t unknown) {
     tlv_schema_diagnostic_t* storage = capacity ? calloc(capacity, sizeof(*storage)) : NULL;
     if (capacity && !storage) return PyErr_NoMemory();
     tlv_schema_diagnostic_report_t report = {storage, capacity, 0};
-    tlv_schema_diagnostic_t        offset = {0};
-    tlv_result_t                   code =
-        tlv_schema_validate_all_diag(buffer->buf, (size_t)buffer->len, format, schema, max_depth,
-                                     max_elements, unknown, &report, &offset);
+    tlv_schema_diagnostic_t        offset;
+    tlv_schema_diagnostic_init(&offset);
+    tlv_result_t code =
+        checked
+            ? tlv_schema_validate_all_checked(checked, buffer->buf, (size_t)buffer->len, format,
+                                              max_depth, max_elements, unknown, &report, &offset)
+            : tlv_schema_validate_all_diag(buffer->buf, (size_t)buffer->len, format, schema,
+                                           max_depth, max_elements, unknown, &report, &offset);
     PyObject* result = NULL;
     if (code == TLV_OK || code == TLV_ERR_SCHEMA) {
         size_t    stored = report.count < capacity ? report.count : capacity;
@@ -647,7 +652,22 @@ static PyObject* schema_diagnostic_report(const Py_buffer* buffer, const tlv_for
     return result;
 }
 
-/* Validates or reports with a resolved descriptor; the caller owns buffer. */
+#define CHECKED_SCHEMA_NAME "opentlv.checked_schema"
+/* A checked handle borrows the rule tree its capsule owns. */
+typedef struct checked_schema {
+    tlv_structure_schema_t* schema;
+    tlv_schema_checked_t    checked;
+} checked_schema;
+
+static void destroy_checked_schema(PyObject* capsule) {
+    checked_schema* self = PyCapsule_GetPointer(capsule, CHECKED_SCHEMA_NAME);
+    if (!self) return;
+    free_structure_schema(self->schema);
+    free(self);
+}
+
+/* Validates or reports with a resolved descriptor; the caller owns buffer.
+ * `schema_obj` is a serialized schema or a checked schema capsule. */
 static PyObject* structure_validate(const Py_buffer* buffer, const tlv_format_t* format,
                                     PyObject* schema_obj, Py_ssize_t max_depth,
                                     Py_ssize_t max_elements, int report, Py_ssize_t report_capacity,
@@ -662,28 +682,68 @@ static PyObject* structure_validate(const Py_buffer* buffer, const tlv_format_t*
         return NULL;
     }
 
-    tlv_structure_schema_t* schema = build_structure_schema(schema_obj);
-    if (schema == NULL) {
-        return NULL;
-    }
+    const checked_schema*       handle = PyCapsule_IsValid(schema_obj, CHECKED_SCHEMA_NAME)
+                                             ? PyCapsule_GetPointer(schema_obj, CHECKED_SCHEMA_NAME)
+                                             : NULL;
+    const tlv_schema_checked_t* checked = handle ? &handle->checked : NULL;
+    tlv_structure_schema_t*     schema = handle ? NULL : build_structure_schema(schema_obj);
+    if (!handle && !schema) return NULL;
 
-    tlv_schema_diagnostic_t diagnostic;
     if (report) {
-        PyObject* result = schema_diagnostic_report(buffer, format, schema, (size_t)max_depth,
-                                                    (size_t)max_elements, (size_t)report_capacity,
-                                                    (tlv_schema_unknown_policy_t)unknown);
+        PyObject* result = schema_diagnostic_report(
+            buffer, format, schema, checked, (size_t)max_depth, (size_t)max_elements,
+            (size_t)report_capacity, (tlv_schema_unknown_policy_t)unknown);
         free_structure_schema(schema);
         return result;
     }
+    tlv_schema_diagnostic_t diagnostic;
+    tlv_schema_diagnostic_init(&diagnostic);
     tlv_result_t code =
-        tlv_schema_validate((const uint8_t*)buffer->buf, (size_t)buffer->len, format, schema,
-                            (size_t)max_depth, (size_t)max_elements, &diagnostic);
+        checked ? tlv_schema_validate_checked(checked, (const uint8_t*)buffer->buf,
+                                              (size_t)buffer->len, format, (size_t)max_depth,
+                                              (size_t)max_elements, &diagnostic)
+                : tlv_schema_validate((const uint8_t*)buffer->buf, (size_t)buffer->len, format,
+                                      schema, (size_t)max_depth, (size_t)max_elements, &diagnostic);
+    /* Raise before releasing the rule tree that diagnostic evidence may borrow. */
+    if (code != TLV_OK) raise_schema_error(code, &diagnostic);
     free_structure_schema(schema);
-    if (code != TLV_OK) {
-        raise_schema_error(code, &diagnostic);
-        return NULL;
+    return code == TLV_OK ? Py_NewRef(Py_None) : NULL;
+}
+
+/* schema_check(schema, prepare) -> checked schema capsule | None
+ *
+ * Checks a serialized schema definition once, independently of input. With
+ * `prepare`, the returned capsule owns the native rule tree and its checked
+ * handle, so repeated validation skips the definition check. */
+static PyObject* _opentlv_schema_check(PyObject* module, PyObject* args) {
+    (void)module;
+    PyObject* schema_obj;
+    int       prepare;
+    if (!PyArg_ParseTuple(args, "Op", &schema_obj, &prepare)) return NULL;
+    tlv_structure_schema_t* schema = build_structure_schema(schema_obj);
+    if (!schema) return NULL;
+    checked_schema* self = prepare ? calloc(1, sizeof(*self)) : NULL;
+    if (prepare && !self) {
+        free_structure_schema(schema);
+        return PyErr_NoMemory();
     }
-    Py_RETURN_NONE;
+    tlv_schema_diagnostic_t diagnostic;
+    tlv_schema_diagnostic_init(&diagnostic);
+    tlv_result_t code = self ? tlv_schema_prepare(&self->checked, schema, &diagnostic)
+                             : tlv_schema_check(schema, &diagnostic);
+    if (code != TLV_OK || !self) {
+        if (code != TLV_OK) raise_schema_error(code, &diagnostic);
+        free_structure_schema(schema);
+        free(self);
+        return code == TLV_OK ? Py_NewRef(Py_None) : NULL;
+    }
+    self->schema = schema;
+    PyObject* capsule = PyCapsule_New(self, CHECKED_SCHEMA_NAME, destroy_checked_schema);
+    if (!capsule) {
+        free_structure_schema(schema);
+        free(self);
+    }
+    return capsule;
 }
 
 /* structure_validate(data, format, schema, max_depth, max_elements) -> None
@@ -1770,12 +1830,16 @@ static PyMethodDef opentlv_python_methods[] = {
     {"program_create", opentlv_python_program_create, METH_VARARGS,
      "Compile or validate an owned immutable Query image."},
     {"program_info", opentlv_python_program_info, METH_O, "Inspect compiled Query requirements."},
+    {"program_plan_info", opentlv_python_program_plan_info, METH_O,
+     "Inspect validated native plan requirements without the frontend."},
     {"program_render", opentlv_python_program_render, METH_VARARGS,
      "Format, explain or copy a compiled image."},
     {"execution_create", opentlv_python_execution_create, METH_VARARGS,
      "Create independent bounded execution."},
     {"execution_size", opentlv_python_execution_size, METH_VARARGS,
      "Discover caller workspace size and alignment."},
+    {"execution_reset", opentlv_python_execution_reset, METH_O,
+     "Reset execution in place, keeping program, workspace and budgets."},
     {"execution_feed", opentlv_python_execution_feed, METH_VARARGS,
      "Feed a pinned complete canonical event."},
     {"execution_finish", opentlv_python_execution_finish, METH_O,
@@ -1791,6 +1855,8 @@ static PyMethodDef opentlv_python_methods[] = {
      "Select context or explicit pruning."},
     {"execution_document", opentlv_python_execution_document, METH_VARARGS,
      "Evaluate a bounded Document snapshot."},
+    {"execution_document_visit", opentlv_python_execution_document_visit, METH_VARARGS,
+     "Visit remaining finalized Document results."},
     {"execution_edit", opentlv_python_execution_edit, METH_VARARGS,
      "Edit a finalized Document selection through C."},
     {"query_schema", opentlv_python_query_schema, METH_VARARGS,
@@ -1846,6 +1912,11 @@ static PyMethodDef opentlv_python_methods[] = {
      "Feed a preorder item to the C matcher."},
     {"query_visit", opentlv_python_query_visit, METH_VARARGS,
      "Visit matches through the C Query engine."},
+    {"query_format", opentlv_python_query_format, METH_O, "Format a canonical path query."},
+    {"query_visit_buffer", opentlv_python_query_visit_buffer, METH_VARARGS,
+     "Visit path matches in a complete buffer without a Reader."},
+    {"document_query_visit", opentlv_python_document_query_visit, METH_VARARGS,
+     "Visit Document nodes addressed by a path query."},
     {"version_string", _opentlv_version_string, METH_NOARGS,
      "Return the Python binding version, for example \"0.1.0\"."},
     {"result_string", _opentlv_result_string, METH_VARARGS,
@@ -1861,7 +1932,9 @@ static PyMethodDef opentlv_python_methods[] = {
     {"encoded_size", _opentlv_encoded_size, METH_VARARGS,
      "Compute the encoded size of an element without writing it."},
     {"structure_validate", _opentlv_structure_validate, METH_VARARGS,
-     "Validate a buffer against a serialized structural schema."},
+     "Validate a buffer against a serialized or checked structural schema."},
+    {"schema_check", _opentlv_schema_check, METH_VARARGS,
+     "Check a structural schema definition, optionally preparing a reusable handle."},
     {"definition_find", _opentlv_definition_find, METH_VARARGS,
      "Find the first generic C Definition."},
     {"number_codec", _opentlv_number_codec, METH_VARARGS, "Configured C numeric Value codec."},

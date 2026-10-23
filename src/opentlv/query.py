@@ -6,6 +6,7 @@ import _opentlv as _native
 from opentlv.cursor import TreeReader
 from opentlv.element import Element
 from opentlv.error import _from_native
+from opentlv.format import _format_specification
 from opentlv.tag import Tag
 
 
@@ -26,13 +27,37 @@ class Query:
         """Owned tags returned by the C query-step API."""
         return tuple(Tag(tag) for tag in _native.query_steps(self._capsule))
 
+    def format(self) -> str:
+        """Canonical C spelling: uppercase hexadecimal tags separated by slashes."""
+        try:
+            return _native.query_format(self._capsule)
+        except _native.Error as error:
+            raise _from_native(error) from None
+
+    def __str__(self) -> str:
+        return self.format()
+
+    def __repr__(self) -> str:
+        return f"Query({self.format()!r})"
+
     def matcher(self):
         """Create independent matching state for a new traversal."""
         return QueryMatcher(self)
 
-    def visit_buffer(self, data, callback, format=None, **limits):
-        """Visit matches in complete input using a C Tree Reader and C Query matcher."""
-        self.matcher().visit(TreeReader(data, format, **limits), callback)
+    def visit_buffer(self, data, callback, format=None, *, max_depth=64, max_elements=65536):
+        """Call callback(element, depth, offset) for matches in complete input.
+
+        C traverses the buffer directly, without a Reader or matcher object.
+        Use Visit.CONTINUE/STOP/ERROR or None; elements own copied value bytes.
+        """
+        def adapter(tag, value, depth, offset):
+            return callback(Element(Tag(tag), memoryview(value)), depth, offset)
+        try:
+            _native.query_visit_buffer(self._capsule, bytes(memoryview(data)),
+                                       _format_specification(format),
+                                       max_depth, max_elements, adapter)
+        except _native.Error as error:
+            raise _from_native(error) from None
 
 
 class QueryMatcher:

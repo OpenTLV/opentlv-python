@@ -276,11 +276,7 @@ class StructureSchema:
         `InvalidSchemaError` for an invalid definition, or a reading error
         such as `LimitError`.
         """
-        format = _format_specification(format)
-        try:
-            _native.structure_validate(data, format, self._to_native(), max_depth, max_elements)
-        except _native.Error as native_error:
-            raise _from_native(native_error) from None
+        _validate(self._to_native(), data, format, max_depth, max_elements)
 
     def validate_diagnostics(self, data, format=None, *, capacity=64,
                              unknown=UnknownPolicy.BY_SCHEMA,
@@ -290,15 +286,83 @@ class StructureSchema:
         Zero capacity counts only. Wire/configuration errors raise instead of
         returning a partial report. No traversal or validation occurs in Python.
         """
+        return _report(self._to_native(), data, format, capacity, unknown, max_depth,
+                       max_elements)
+
+    def check_definition(self) -> None:
+        """Check every reachable rule table and group through C, without input.
+
+        Raises `InvalidSchemaError` with the native definition index, for
+        example for a duplicate tag or reversed bounds.
+        """
         try:
-            count, items = _native.structure_validate(data, _format_specification(format),
-                self._to_native(), max_depth, max_elements, capacity, int(unknown))
+            _native.schema_check(self._to_native(), False)
         except _native.Error as error:
             raise _from_native(error) from None
-        return SchemaDiagnosticReport(count, tuple(_diagnostic_from_native(item) for item in items))
+
+    def check(self) -> "CheckedStructureSchema":
+        """Check the definition once and return a handle for repeated validation.
+
+        The handle owns a native copy of the whole schema graph taken now;
+        later changes to this schema, its rules or nested schemas do not
+        affect it, so check again after changing the definition. Raises
+        `InvalidSchemaError` like `check_definition()`.
+        """
+        result = CheckedStructureSchema.__new__(CheckedStructureSchema)
+        try:
+            result._capsule = _native.schema_check(self._to_native(), True)
+        except _native.Error as error:
+            raise _from_native(error) from None
+        return result
 
     def __len__(self) -> int:
         return len(self.rules)
 
     def __repr__(self) -> str:
         return f"StructureSchema(rules={self.rules!r}, allow_unknown={self.allow_unknown})"
+
+
+class CheckedStructureSchema:
+    """A structural schema whose definition C checked once, from `StructureSchema.check()`.
+
+    Validation runs the same C validator as `StructureSchema` but skips the
+    per-call definition check, so it never raises `InvalidSchemaError`.
+    Runtime limits are still checked on every call. The handle keeps its
+    native schema graph alive and immutable for as long as it exists.
+
+    >>> schema = StructureSchema([StructureRule(Tag(b"\\x01"), min_occurs=1)]).check()
+    >>> schema.validate(bytes([0x01, 0x00]))
+    """
+
+    __slots__ = ("_capsule",)
+
+    def __init__(self, *args, **kwargs) -> None:
+        raise TypeError("use StructureSchema.check()")
+
+    def validate(self, data, format: Format | None = None, max_depth: int = 32,
+                 max_elements: int = 100_000) -> None:
+        """Validate `data` like `StructureSchema.validate()`."""
+        _validate(self._capsule, data, format, max_depth, max_elements)
+
+    def validate_diagnostics(self, data, format=None, *, capacity=64,
+                             unknown=UnknownPolicy.BY_SCHEMA,
+                             max_depth=32, max_elements=100_000) -> SchemaDiagnosticReport:
+        """Report violations like `StructureSchema.validate_diagnostics()`."""
+        return _report(self._capsule, data, format, capacity, unknown, max_depth, max_elements)
+
+
+def _validate(schema, data, format, max_depth, max_elements):
+    try:
+        _native.structure_validate(data, _format_specification(format), schema, max_depth,
+                                   max_elements)
+    except _native.Error as native_error:
+        raise _from_native(native_error) from None
+
+
+def _report(schema, data, format, capacity, unknown, max_depth, max_elements):
+    try:
+        count, items = _native.structure_validate(data, _format_specification(format), schema,
+                                                  max_depth, max_elements, capacity, int(unknown))
+    except _native.Error as error:
+        raise _from_native(error) from None
+    return SchemaDiagnosticReport(count, tuple(_diagnostic_from_native(item) for item in items))
