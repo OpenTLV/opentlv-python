@@ -9,7 +9,7 @@ The `opentlv` package is an experimental Python binding for OpenTLV. It binds
 [custom composed formats](#custom-formats)),
 `LengthSchema`/`StructureSchema` (with a reusable `CheckedStructureSchema`),
 compiled Query programs and the `OpenTLVError` exception hierarchy,
-plus a narrow `codec` submodule (see [Codec](#codec)). For layout and build
+plus the generic Value and structure codecs (see [Codec](#codec)). For layout and build
 details, see [Python bindings](../development/python.md).
 
 ## Setup
@@ -266,12 +266,62 @@ bytes and names, so returned definitions survive the registry.
 
 ## Codec
 
-`NumberCodec(NumberEncoding.BIG_ENDIAN, width=2)` converts unsigned numeric
-Values through C. `LITTLE_ENDIAN` and `BCD` are also supported; BCD requires
-`digits` precision. Width zero selects minimal encoding. `decode`, `encode`,
-`encoded_size` and `encode_into` expose conversion, measurement and caller-owned
-output. Conversion errors raise the corresponding `OpenTLVError` subclass; integers outside uint64
-raise `OverflowError` during representation adaptation.
+Codecs convert one element's Value bytes through the public C descriptors. They
+never select themselves by tag: choose the codec for each Value explicitly.
+Every Value codec has `decode`, `encode`, `encoded_size` and `encode_into`
+for conversion, measurement and caller-owned output.
+
+| Codec | Python value | C descriptor |
+| --- | --- | --- |
+| `NumberCodec(encoding, width, digits)` | `int` (uint64) | `tlv_number_decode`/`tlv_number_encode` |
+| `ValueCodec.UINT8`, `UINT16_BE`, `UINT16_LE`, `UINT32_BE`, `UINT32_LE` | `int` of exactly that width | `tlv_codec_uint8`, `tlv_codec_uint16_be`, ... |
+| `ValueCodec.INT64_MINIMAL_BE` | signed `int`, shortest two's complement | `tlv_codec_int64_minimal_be` |
+| `ValueCodec.BYTES` | `bytes` | `tlv_codec_bytes` |
+| `ValueCodec.IPV4`, `ValueCodec.IPV4_LIST` | `IPv4Address`, `tuple` of them | `tlv_codec_ipv4`, `tlv_codec_ipv4_list` |
+| `TextCodec(alphabet, width, zero_padding)` | ASCII `str` | `tlv_text_decode`/`tlv_text_encode` |
+| `DigitsCodec(width)` | decimal digit `str` with leading zeros | `tlv_digits_decode`/`tlv_digits_encode` |
+
+`NumberCodec` supports `BIG_ENDIAN`, `LITTLE_ENDIAN` and `BCD`; BCD requires
+`digits` precision. `TextCodec` accepts `TextAlphabet.ASCII_PRINTABLE` or
+`ASCII_ALNUM`; a nonzero width is fixed, and `zero_padding` strips or adds
+trailing zero bytes. `DigitsCodec` packs digits high nibble first with trailing
+`F` padding, unlike numeric BCD. Width zero selects minimal encoding for all
+three. IPv4 encoding accepts anything `IPv4Address` accepts; decoded lists keep
+order and duplicates.
+
+```python
+from opentlv import DigitsCodec, TextCodec, ValueCodec
+
+DigitsCodec().decode(b"\x01\x23\x4f")             # "01234"
+TextCodec(width=4, zero_padding=True).encode("ab")  # b"ab\x00\x00"
+ValueCodec.IPV4_LIST.decode(bytes.fromhex("c0000201c6336401"))
+# (IPv4Address('192.0.2.1'), IPv4Address('198.51.100.1'))
+```
+
+Conversion errors raise the corresponding `OpenTLVError` subclass. Integers
+outside the codec's C type raise `OverflowError` during representation
+adaptation. A failed `encode_into` leaves its output unchanged.
+
+`StructureCodec(format, schema, decode=..., encode=...)` maps one complete TLV
+sequence to one application object. C validates framing, nesting, limits and
+the optional `StructureSchema` or `CheckedStructureSchema` before
+`decode(data)` sees the bytes. It validates what `encode(value)` returns
+before handing it back, so a schema violation in produced bytes raises with an
+`output` location. `encode` runs once per operation. A missing direction
+raises `UnsupportedError`, and callback exceptions propagate unchanged.
+
+```python
+from opentlv import Reader, StructureCodec, StructureRule, StructureSchema, Tag, ValueCodec
+
+schema = StructureSchema([StructureRule(Tag(b"\x5a"), min_occurs=1, max_occurs=1,
+                                        min_length=2, max_length=2)])
+port = StructureCodec(
+    schema=schema,
+    decode=lambda data: ValueCodec.UINT16_BE.decode(next(iter(Reader(data))).value),
+    encode=lambda value: b"\x5a\x02" + ValueCodec.UINT16_BE.encode(value))
+port.decode(bytes.fromhex("5a021f90"))  # 8080
+port.encode(443)                        # b"\x5a\x02\x01\xbb"
+```
 
 `opentlv.codec` also binds `tlv_emv_codec_amount` for EMV format n12 amounts:
 
@@ -282,9 +332,10 @@ codec.encode_amount(12345)            # b"\x00\x00\x00\x01\x23\x45"
 codec.decode_amount(b"\x00\x00\x00\x01\x23\x45")  # 12345
 ```
 
-Other public C codecs (dates, Track 2, AFL, CVM results and cryptogram
-information, among others) remain binding gaps. They must be exposed by wrapping
-the public C descriptors rather than reimplementing their conversion logic.
+Builtin protocol codecs (ASN.1, Bluetooth, LLDP, and EMV dates, Track 2, AFL,
+CVM results and cryptogram information, among others) remain binding gaps.
+They must be exposed by wrapping the public C descriptors rather than
+reimplementing their conversion logic.
 `OpenTLVError.code` contains the shared `tlv_result_t` value; `codec_detail`
 retains operation, original provider result, contract violation and delegated
 cause when supplied by C. Its `schema` entry is an owned `SchemaDiagnostic`.
@@ -292,6 +343,8 @@ cause when supplied by C. Its `schema` entry is an owned `SchemaDiagnostic`.
 Runnable version, decoding and encoding an EMV "Amount, Authorised" element:
 [codec.py](../../examples/codec.py)
 (`python examples/codec.py`).
+[value_codecs.py](../../examples/value_codecs.py) decodes digits, text and an
+IPv4 list from one message (`python examples/value_codecs.py`).
 
 ## Documents
 
@@ -401,9 +454,11 @@ keeps that tree and its `tlv_schema_checked_t` handle in a capsule for as long
 as it lives;
 `LengthSchema` likewise marshals its rules and delegates lookup and length
 constraints to `tlv_schema_find` and `tlv_schema_validate_length`. Rule flags
-and length multiples use the same C semantics. `codec.decode_amount`/
-`encode_amount` wrap `tlv_codec_decode`/`tlv_codec_encode` directly, passed
-the public `tlv_emv_codec_amount` descriptor. `opentlv.Document` wraps a
+and length multiples use the same C semantics. Value codecs and
+`codec.decode_amount`/`encode_amount` call `tlv_codec_decode`/`tlv_codec_encode`
+with the public descriptor or a call-local configured one; `StructureCodec`
+calls `tlv_structure_decode`/`tlv_structure_encode` with C callbacks that
+invoke its Python functions. `opentlv.Document` wraps a
 `tlv_document_t*` in a `PyCapsule` that frees it (`tlv_document_free()`) when
 the capsule is garbage collected or `close()` drops Python's only reference
 to it. `Node` retains its Document and validates shared ownership tokens before
@@ -488,10 +543,13 @@ and optional copied `QueryMatch` metadata; return an integer or, for `text`, a
 string. Text providers require `max_result_bytes` for native bounded scratch.
 Keep provider IDs and contracts stable when loading images. Callback exceptions
 propagate; callback allocations and work are outside the C engine's limits.
-`QueryCodecProvider(id, NumberCodec(...))` decodes Values natively through
-`tlv_query_codec_decode()`, without Python callbacks, for `num`, `bcd` or
-`date`. The codec yields an unsigned integer; a value above the signed 64-bit
-range raises `InvalidValueError` with codec detail.
+`QueryCodecProvider(id, codec)` decodes Values natively through
+`tlv_query_codec_decode()`, without Python callbacks. `NumberCodec` and the
+unsigned `ValueCodec` members yield unsigned integers for `num`, `bcd` or
+`date`; a value above the signed 64-bit range raises `InvalidValueError` with
+codec detail. `ValueCodec.INT64_MINIMAL_BE` yields signed integers.
+`TextCodec` and `ValueCodec.BYTES` serve `text`, and C validates their result
+as UTF-8. Digit-string and IPv4 codecs have no Query representation.
 
 `execution.feed(event)` accepts canonical Tree events. Retain borrowed input as
 documented by the event producer; the execution pins the event bytes and original

@@ -87,7 +87,7 @@ the extension, but the matrix does not claim testing one identical wheel across
 all interpreter versions. Hosted runner architectures are recorded in evidence;
 these checks are not a manylinux/macOS deployment-target or publication policy.
 
-The inventory is 350 pytest cases, eleven examples and 171 shared Query
+The inventory is 375 pytest cases, twelve examples and 171 shared Query
 fixtures / 664 checks. Intentional changes to tests or the pinned Core corpus
 must update this inventory with reviewed evidence. Skips, failures, empty suites
 and contradictory JUnit counts are rejected.
@@ -143,6 +143,8 @@ For #21, the generator include moved the suppressed `module.c` lines down by one
 For #22, structure validation returns an explicit `None` reference, so the first
 cppcheck `Py_RETURN_NONE` exception was removed; the remaining one moved with
 the checked-schema entry points.
+For #23, the number codec moved from `module.c` to `codec.c`, which moved the
+suppressed `module.c` lines up; the new `codec.c` needs no exception.
 
 ## Core API coverage
 

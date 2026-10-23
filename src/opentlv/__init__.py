@@ -13,15 +13,18 @@ Currently bound: `Reader`, `TreeReader`, `Query`/`QueryMatcher`, Visitors,
 `Format`, `FixedFormat`, `ComposedFormat` with its field encodings,
 `LengthSchema`/`StructureSchema` with its `CheckedStructureSchema` handle,
 the `Generator` wire generator and the
-`OpenTLVError` exception hierarchy. The `codec` submodule exposes configured numeric codecs and EMV amounts.
-Other public C codecs remain a capability gap.
+`OpenTLVError` exception hierarchy. The `codec` submodule exposes the generic
+C Value codecs (`NumberCodec`, `ValueCodec`, `TextCodec`, `DigitsCodec`), the
+`StructureCodec` sequence binding and EMV amounts. Builtin protocol codecs
+remain a capability gap.
 """
 
 from _opentlv import version_string
 
 from opentlv.definition import Definition, DefinitionRegistry
 from opentlv import codec
-from opentlv.codec import NumberCodec, NumberEncoding
+from opentlv.codec import (DigitsCodec, NumberCodec, NumberEncoding, StructureCodec, TextAlphabet,
+                           TextCodec, ValueCodec)
 from opentlv.document import Document, DocumentBuilder, Node
 from opentlv.element import Element
 from opentlv.location import Location
@@ -89,6 +92,7 @@ __all__ = [
     "codec",
     "Definition",
     "DefinitionRegistry",
+    "DigitsCodec",
     "NumberCodec",
     "NumberEncoding",
     "Encoding",
@@ -144,8 +148,12 @@ __all__ = [
     "UnknownPolicy",
     "StructureGroup",
     "StructureSchema",
+    "StructureCodec",
     "Tag",
+    "TextAlphabet",
+    "TextCodec",
     "UnsupportedError",
+    "ValueCodec",
     "ValueOverflowError",
     "VariableIdentifier",
     "VariableLength",
