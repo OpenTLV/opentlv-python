@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Marek Cingel
+
+version = 1
+
+# Documentation and configuration that cannot carry comments, or whose
+# format would be changed by a header. Keep paths explicit so new sources
+# cannot silently bypass the source-header policy.
+[[annotations]]
+path = [
+    ".clang-format",
+    ".clang-tidy",
+    ".gitattributes",
+    ".gitignore",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "README.md",
+    "cmake/api-coverage.json",
+    "cmake/ci-matrix.json",
+    "cmake/core-artifact.json",
+    "cmake/core-features.json",
+    "cmake/python-package.json",
+    "cmake/static-analysis-baseline.json",
+    "docs/development/python.md",
+    "docs/guides/python.md",
+    "docs/migration.md",
+    "docs/quality-gates.md",
+    "docs/releases.md",
+    "docs/validation/ci.json",
+    "docs/validation/ci.md",
+    "docs/validation/layout.md",
+    "docs/validation/packaging.json",
+    "docs/validation/packaging.md",
+    "docs/validation/standalone-build.json",
+    "docs/validation/standalone-build.md",
+    "docs/versioning.md",
+    "native/README.md",
+    "pyproject.toml",
+    "src/README.md",
+    "src/pyproject.toml",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marek Cingel"
+SPDX-License-Identifier = "MIT"
+
+# Frozen migration evidence: cmake/python-package.json pins the inventory, the
+# inventory pins the imported Core workflow, and the logs are recorded command
+# output. Do not rewrite them with headers.
+[[annotations]]
+path = [
+    "docs/migration/original-python.yml",
+    "docs/migration/source-inventory.json",
+    "docs/migration/validation.json",
+    "docs/migration/windows-baseline.log",
+    "docs/migration/windows-imported.log",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marek Cingel"
+SPDX-License-Identifier = "MIT"

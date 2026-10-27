@@ -42,13 +42,19 @@ def policy(root=ROOT):
                 "Distribution metadata differs from Python package policy")
         expected = ["opentlv-core==" + value["version"]] if name == "opentlv" else []
         require(project.get("dependencies", []) == expected, "Python package dependency must be exact")
+        require(project.get("license") == "MIT" and project.get("license-files") == ["LICENSE"],
+                "Distribution license metadata changed")
+    # Hatchling cannot package files outside src/, so the public package keeps a copy.
+    require((root / "src/LICENSE").read_bytes() == (root / "LICENSE").read_bytes(),
+            "src/LICENSE differs from LICENSE")
     return value
 
 
 def check_metadata(data, name, value):
     metadata = BytesParser().parsebytes(data)
     for field, expected in (("Name", name), ("Version", value["version"]),
-                            ("Requires-Python", value["requires_python"])):
+                            ("Requires-Python", value["requires_python"]),
+                            ("License-Expression", "MIT"), ("License-File", "LICENSE")):
         require(metadata.get_all(field) == [expected], "Package metadata differs: " + field)
     dependencies = [re.sub(r"[\s()]", "", item) for item in metadata.get_all("Requires-Dist", [])]
     require(dependencies == (["opentlv-core==" + value["version"]] if name == "opentlv" else []),
@@ -67,6 +73,9 @@ def check_wheel(path, name, value, selected):
         require([entry for entry in names if entry.endswith(".dist-info/METADATA")] == [info + "METADATA"],
                 "Unexpected wheel metadata directory")
         check_metadata(archive.read(info + "METADATA"), name, value)
+        require(info + "licenses/LICENSE" in names and
+                archive.read(info + "licenses/LICENSE") == (ROOT / "LICENSE").read_bytes(),
+                "Wheel license text differs")
         wheel = BytesParser().parsebytes(archive.read(info + "WHEEL"))
         require(wheel.get_all("Tag") == [path.name[len(prefix) + 1:-4]], "Wheel tag differs from filename")
         require(wheel.get_all("Root-Is-Purelib") == ["false" if name == "opentlv-core" else "true"],
@@ -78,6 +87,10 @@ def check_wheel(path, name, value, selected):
                             and "/" not in entry for entry in payload), "Unexpected native wheel payload")
             require(json.loads(archive.read("_opentlv_core_dependency.json")) == selected,
                     "Bundled Core identity differs from build evidence")
+            # The extension links Core statically.
+            require(info + "licenses/OpenTLV/LICENSE" in names and
+                    archive.read(info + "licenses/OpenTLV/LICENSE").strip(),
+                    "Native wheel lacks the Core license")
         else:
             require("opentlv/__init__.py" in payload and
                     all(entry.startswith("opentlv/") and ".." not in PurePosixPath(entry).parts
@@ -90,10 +103,10 @@ def check_wheel(path, name, value, selected):
 def sdist_inputs(name):
     """Required build inputs relative to each distribution's source root."""
     if name == "opentlv":
-        return {"pyproject.toml", "README.md"} | {
+        return {"pyproject.toml", "README.md", "LICENSE"} | {
             path.relative_to(ROOT / "src").as_posix()
             for path in (ROOT / "src/opentlv").glob("*.py")}
-    return {"CMakeLists.txt", "README.md", "pyproject.toml", "src/pyproject.toml",
+    return {"CMakeLists.txt", "LICENSE", "README.md", "pyproject.toml", "src/pyproject.toml",
             "docs/migration/source-inventory.json"} | {
                 path.relative_to(ROOT).as_posix()
                 for directory in ("cmake", "scripts", "native")
@@ -125,6 +138,7 @@ def check_sdist(path, name, value):
             require(member.isfile(), "Expected a regular sdist input")
             return archive.extractfile(member).read()
         check_metadata(content("PKG-INFO"), name, value)
+        require(content("LICENSE") == (ROOT / "LICENSE").read_bytes(), "Sdist license text differs")
         project = tomllib.loads(content("pyproject.toml").decode())["project"]
         require(project["name"] == name and project["version"] == value["version"],
                 "Sdist build metadata differs")

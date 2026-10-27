@@ -20,3 +20,9 @@ include(cmake/Core.cmake)
 add_subdirectory(native)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/core-selection.json"
     DESTINATION . RENAME _opentlv_core_dependency.json COMPONENT Python)
+# Core is linked statically, so the wheel carries its license next to this one.
+if(DEFINED SKBUILD_METADATA_DIR)
+    string(JSON _core_source_path GET "${_core_json}" source_path)
+    install(FILES "${_core_source_path}/LICENSE"
+        DESTINATION "${SKBUILD_METADATA_DIR}/licenses/OpenTLV" COMPONENT Python)
+endif()

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Marek Cingel
-"""Check Python syntax, workflow structure and the inherited native formatting."""
+"""Check Python syntax, workflow structure, licensing metadata and the inherited native formatting."""
 
 import ast
 from pathlib import Path
@@ -30,6 +30,10 @@ def main():
     for path in sorted((ROOT / "native").rglob("*")):
         if path.suffix in (".c", ".h"):
             run(formatter, "--dry-run", "--Werror", path)
+    reuse = shutil.which("reuse")
+    require(reuse, "REUSE is required")
+    require("6.2.0" in run(reuse, "--version", capture=True), "Use the pinned REUSE 6.2.0")
+    run(reuse, "--root", ROOT, "lint")
     run("git", "diff", "--check")
 
 
