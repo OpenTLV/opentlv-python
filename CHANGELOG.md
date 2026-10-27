@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Normalize Python licensing and community policies to the Workspace reference: `REUSE.toml` annotates documentation, configuration and frozen migration evidence by explicit path, `LICENSES/MIT.txt` supplies the license text, and the source quality check runs `reuse lint` with the pinned REUSE 6.2.0. The contributor guide documents copyright attribution, source headers and packaged license notices; it, the README and the development guide link the shared `OpenTLV/.github` contribution, conduct, security and support policies. (#33)
 - `QueryProgram` with static names compiles directly through `tlv_query_compile_scratch()` and `tlv_query_compile()`; a `resolve` callback keeps checked preparation and commit, and both produce the same image. `QueryExecution.reset()` resets in place through `tlv_query_exec_reset()`, keeping its program, providers, workspace and budgets. Document evaluation without `value_capacity` measures the Value snapshot with `tlv_document_query_value_size()` only for programs that read constructed Values, instead of always sizing the whole encoded Document. `Query.visit_buffer()` traverses complete input through `tlv_query_visit_buffer()` without a Reader and takes only `max_depth` and `max_elements` limits. (#22)
 - Normalize Python sources under `src/opentlv`, native code under `native`, and standalone tests/examples; update packaging, validation and development paths without changing package identities or API. (#10)
 - Clarify standalone installation, workspace development, supported Python versions and contribution ownership, and link examples to the Python repository. (OpenTLV/opentlv-docs#34)
@@ -13,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Include license texts in the Python packages: both distributions declare `license-files = ["LICENSE"]`, so wheels and sdists carry `LICENSE` with a `License-File` entry, including the `opentlv` packages that had none (from the `src/LICENSE` copy). The native `opentlv-core` wheel also carries the license of the statically linked Core as `.dist-info/licenses/OpenTLV/LICENSE`, and the package checks reject packages without these texts. The build requires scikit-build-core 0.11 and hatchling 1.27 for PEP 639 license files. (#33)
 - Correct the `LICENSE` copyright holder from the OpenTLV organization, inherited from the GitHub template, to Marek Cingel, matching the source headers and the Core license. (#16)
 - Fix macOS CI startup with Bash 3.2 while preserving optional verified-Core arguments and failure propagation. (#3)
 

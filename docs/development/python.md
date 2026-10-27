@@ -30,7 +30,10 @@ The facade uses `src/opentlv`, with its separate distribution metadata in
 `src/pyproject.toml`. Tests live in `tests/python` and examples in `examples`,
 outside the installed package. Run examples from the repository root.
 Only the Python install component enters the wheel: no Core headers, archives,
-or build tools are installed as Python package payload.
+or build tools are installed as Python package payload. Both distributions
+declare `License-Expression: MIT` and carry `LICENSE` as their `License-File`;
+the facade's copy is `src/LICENSE`. Because Core is linked statically, the native
+wheel also carries Core's license as `.dist-info/licenses/OpenTLV/LICENSE`.
 
 To build both wheels and test native sdist rebuilding:
 
@@ -118,6 +121,9 @@ Report Python API, packaging, installation and binding test problems in the
 submit Python changes to [opentlv-python](https://github.com/OpenTLV/opentlv-python).
 Include the Python version, operating system, reproduction and installed
 `_opentlv_core_dependency.json` metadata when reporting build problems.
+Report suspected vulnerabilities privately as described in the shared
+[security policy](https://github.com/OpenTLV/.github/blob/main/SECURITY.md),
+not in public issues.
 Run the [installed-package validation](#validation) and the relevant
 [quality checks](../quality-gates.md) before submitting a change.
 

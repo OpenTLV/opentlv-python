@@ -119,3 +119,19 @@ verified-Core Full CI and assembles an attested candidate with a manifest and
 Set `publish_release: true` to create the version tag and GitHub Release after
 verification and automatically notify the documentation portal. The default
 remains candidate-only; PyPI publication is disabled.
+
+## License
+
+MIT; see [LICENSE](LICENSE). Marek Cingel holds copyright in his original
+contributions, including the bindings migrated from Core; other contributors
+and third parties retain theirs. SPDX/REUSE metadata covers every tracked file.
+Both wheels and sdists include the license text, and the native `opentlv-core`
+wheel also includes the license of the statically linked Core.
+
+## Community
+
+Contribution, conduct, security and support policies are shared across OpenTLV
+in [OpenTLV/.github](https://github.com/OpenTLV/.github); the
+[contributor guide](CONTRIBUTING.md) adds Python-specific instructions. Report
+suspected vulnerabilities privately as described in the
+[security policy](https://github.com/OpenTLV/.github/blob/main/SECURITY.md).

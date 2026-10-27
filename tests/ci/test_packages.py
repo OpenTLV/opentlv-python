@@ -22,7 +22,8 @@ from test_gate import CHECKS, IDENTITY, records
 
 
 def metadata(name, value):
-    result = (f'Metadata-Version: 2.1\nName: {name}\nVersion: {value["version"]}\n'
+    result = (f'Metadata-Version: 2.4\nName: {name}\nVersion: {value["version"]}\n'
+              f'License-Expression: MIT\nLicense-File: LICENSE\n'
               f'Requires-Python: {value["requires_python"]}\n')
     if name == "opentlv":
         result += f'Requires-Dist: opentlv-core=={value["version"]}\n'
@@ -41,7 +42,9 @@ def artifacts(work, record):
             info = prefix + ".dist-info/"
             archive.writestr(info + "METADATA", metadata(name, value))
             archive.writestr(info + "WHEEL", f'Wheel-Version: 1.0\nTag: {tag}\nRoot-Is-Purelib: {str(not native).lower()}\n')
+            archive.writestr(info + "licenses/LICENSE", (ROOT / "LICENSE").read_bytes())
             if native:
+                archive.writestr(info + "licenses/OpenTLV/LICENSE", b"MIT License\n")
                 archive.writestr("_opentlv.abi3.so", b"fixture")
                 archive.writestr("_opentlv_core_dependency.json", json.dumps(record["core"]))
             else:
@@ -117,6 +120,49 @@ def test_public_wheel_rejects_incomplete_or_test_payload(tmp_path, mutation):
         packages.check_wheel(path, "opentlv", packages.policy(), record["core"])
 
 
+@pytest.mark.parametrize("name,entry", [
+    ("opentlv", "licenses/LICENSE"),
+    ("opentlv-core", "licenses/LICENSE"),
+    ("opentlv-core", "licenses/OpenTLV/LICENSE"),
+])
+@pytest.mark.parametrize("mutation", ["missing", "changed"])
+def test_wheel_requires_license_texts(tmp_path, name, entry, mutation):
+    record = records()[0]
+    artifacts(tmp_path, record)
+    path = next((tmp_path / "wheels").glob(name.replace("-", "_") + "-*.whl"))
+    entry = name.replace("-", "_") + "-0.1.0.dist-info/" + entry
+    with zipfile.ZipFile(path) as archive:
+        contents = {item: archive.read(item) for item in archive.namelist()}
+    if mutation == "missing":
+        del contents[entry]
+    else:
+        # An empty Core license, or a project license that differs from LICENSE.
+        contents[entry] = b"" if entry.endswith("OpenTLV/LICENSE") else b"Copyright (c) 2026 OpenTLV\n"
+    with zipfile.ZipFile(path, "w") as archive:
+        for item, content in contents.items():
+            archive.writestr(item, content)
+    with pytest.raises(ValueError, match="license"):
+        packages.check_wheel(path, name, packages.policy(), record["core"])
+
+
+@pytest.mark.parametrize("name", packages.DISTRIBUTIONS)
+def test_sdist_requires_license_text(tmp_path, name):
+    record = records("full")[0]
+    artifacts(tmp_path, record)
+    path = tmp_path / "sdists" / (name.replace("-", "_") + "-0.1.0.tar.gz")
+    with tarfile.open(path) as archive:
+        contents = {member.name: archive.extractfile(member).read()
+                    for member in archive.getmembers() if member.isfile()}
+    contents[name.replace("-", "_") + "-0.1.0/LICENSE"] = b"Copyright (c) 2026 OpenTLV\n"
+    with tarfile.open(path, "w:gz") as archive:
+        for relative, content in contents.items():
+            entry = tarfile.TarInfo(relative)
+            entry.size = len(content)
+            archive.addfile(entry, io.BytesIO(content))
+    with pytest.raises(ValueError, match="license"):
+        packages.check_sdist(path, name, packages.policy())
+
+
 @pytest.mark.parametrize("before,after", [
     (b"Version: 0.1.0", b"Version: 0.7.1"),
     (b"Name: opentlv", b"Name: other"),
@@ -124,6 +170,8 @@ def test_public_wheel_rejects_incomplete_or_test_payload(tmp_path, mutation):
     (b"opentlv-core==0.1.0", b"opentlv-core"),
     (b"opentlv-core==0.1.0", b"opentlv-core>=0.1.0"),
     (b"opentlv-core==0.1.0", b"opentlv-core==0.7.1"),
+    (b"License-Expression: MIT", b"License-Expression: Apache-2.0"),
+    (b"License-File: LICENSE\n", b""),
 ])
 def test_metadata_rejects_incompatible_packages(before, after):
     value = packages.policy()
@@ -131,10 +179,11 @@ def test_metadata_rejects_incompatible_packages(before, after):
         packages.check_metadata(metadata("opentlv", value).replace(before, after), "opentlv", value)
 
 
-@pytest.mark.parametrize("mutation", ["version", "dependency", "core", "baseline"])
+@pytest.mark.parametrize("mutation", ["version", "dependency", "core", "baseline",
+                                      "license", "license-files", "license-copy"])
 def test_source_policy_drift(tmp_path, mutation):
     for relative in (*packages.PROJECTS, "cmake/python-package.json", "cmake/core-artifact.json",
-                     "docs/migration/source-inventory.json"):
+                     "docs/migration/source-inventory.json", "LICENSE", "src/LICENSE"):
         destination = tmp_path / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / relative, destination)
@@ -143,6 +192,14 @@ def test_source_policy_drift(tmp_path, mutation):
         text = path.read_text()
         text = text.replace('version = "0.1.0"', 'version = "0.2.0"') if mutation == "version" else text.replace("==0.1.0", "")
         path.write_text(text)
+    elif mutation in ("license", "license-files"):
+        path = tmp_path / packages.PROJECTS[0]
+        text = path.read_text()
+        path.write_text(text.replace('license = "MIT"', 'license = "Apache-2.0"') if mutation == "license"
+                        else text.replace('license-files = ["LICENSE"]\n', ""))
+    elif mutation == "license-copy":
+        path = tmp_path / "src/LICENSE"
+        path.write_bytes(path.read_bytes().replace(b"Marek Cingel", b"OpenTLV"))
     else:
         path = tmp_path / ("cmake/core-artifact.json" if mutation == "core" else "cmake/python-package.json")
         data = read(path)

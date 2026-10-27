@@ -115,6 +115,10 @@ copied into this repository.
 
 Source checks parse Python files, validate workflow structure and enforce the
 inherited native `.clang-format` with Core's pinned clang-format 23.1.1.
+They also run `reuse lint` with the pinned REUSE 6.2.0, so every tracked file
+needs SPDX license and copyright metadata (see [licensing](../CONTRIBUTING.md#license-and-provenance)).
+Package checks require the license texts in both wheels and sdists and the Core
+license in the native wheel.
 clang-tidy 18 and cppcheck use a filtered compilation database containing every
 Python extension translation unit, without analyzing Core's translation units.
 CodeQL analyzes C and Python. Build/dependency and CI infrastructure regressions
@@ -295,7 +299,7 @@ unchanged:
 ```sh
 python -m venv build/dev
 # Activate build/dev using your shell.
-python -m pip install -r requirements-dev.txt clang-format==23.1.1
+python -m pip install -r requirements-dev.txt clang-format==23.1.1 'reuse[charset-normalizer]==6.2.0'
 python -B scripts/check_quality.py
 python -B -m pytest -p no:cacheprovider -q tests/build tests/ci
 actionlint
