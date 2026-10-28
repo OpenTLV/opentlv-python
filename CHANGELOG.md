@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Install the statically linked Core's license into the native wheel from a CMake-style path. The Core selection records a native path, and on Windows its backslashes, such as in `D:\a\...`, became escape sequences in the generated install script. CMake 4 rejects them, so every Windows wheel build failed; a CMake regression test installs the license from a native path containing `\a`. (#42)
 - Include license texts in the Python packages: both distributions declare `license-files = ["LICENSE"]`, so wheels and sdists carry `LICENSE` with a `License-File` entry, including the `opentlv` packages that had none (from the `src/LICENSE` copy). The native `opentlv-core` wheel also carries the license of the statically linked Core as `.dist-info/licenses/OpenTLV/LICENSE`, and the package checks reject packages without these texts. The build requires scikit-build-core 0.11 and hatchling 1.27 for PEP 639 license files. (#33)
 - Correct the `LICENSE` copyright holder from the OpenTLV organization, inherited from the GitHub template, to Marek Cingel, matching the source headers and the Core license. (#16)
 - Fix macOS CI startup with Bash 3.2 while preserving optional verified-Core arguments and failure propagation. (#3)
