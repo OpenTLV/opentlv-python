@@ -9,7 +9,7 @@ import re
 
 from build_support import ROOT, api, digest, read, require, run, write
 from ci_contract import REPOSITORY, definition_hashes
-from release import preflight
+from release import NOTES, preflight
 
 WORKFLOW = ".github/workflows/python-release.yml"
 
@@ -47,6 +47,25 @@ def verify(directory):
     return current, package
 
 
+def verify_published(released, directory, tag, commit, draft):
+    """Check the release text, uploaded bytes and tag before and after leaving draft."""
+    require(released.get("tag_name") == tag and released.get("draft") is draft
+            and released.get("prerelease") is False and type(released.get("id")) is int
+            and released["id"] > 0 and (draft or bool(released.get("published_at"))),
+            "Unexpected draft release" if draft else "GitHub release was not published")
+    require((released.get("body") or "").strip() == NOTES.read_text(encoding="utf-8").strip(),
+            "Published release notes differ")
+    assets = released.get("assets", [])
+    paths = {path.name: path for path in directory.iterdir()}
+    require(len(assets) == len(paths) and {asset.get("name") for asset in assets} == set(paths),
+            "Published release asset set differs")
+    for asset in assets:
+        path = paths[asset["name"]]
+        require(asset.get("state") == "uploaded" and asset.get("size") == path.stat().st_size
+                and asset.get("digest") == "sha256:" + digest(path), "Published asset digest differs")
+    require(api(f"repos/{REPOSITORY}/commits/{tag}").get("sha") == commit, "Release tag changed")
+
+
 def publish(directory):
     current, package = verify(directory)
     tag = "v" + package["version"]
@@ -54,12 +73,16 @@ def publish(directory):
     created = json.loads(run("gh", "api", f"repos/{REPOSITORY}/git/refs", "-X", "POST",
                              "-f", "ref=refs/tags/" + tag, "-f", "sha=" + current["commit"], capture=True))
     require(created.get("object", {}).get("sha") == current["commit"], "Unexpected created release tag")
-    run("gh", "release", "create", tag, "--repo", REPOSITORY, "--verify-tag",
-        "--title", "OpenTLV Python " + package["version"], "--generate-notes", *sorted(directory.iterdir()))
-    released = api(f"repos/{REPOSITORY}/releases/tags/{tag}")
-    require(released.get("tag_name") == tag and released.get("draft") is False
-            and released.get("prerelease") is False and bool(released.get("published_at"))
-            and type(released.get("id")) is int and released["id"] > 0, "GitHub release was not published")
+    # Upload as a draft first, so nothing is published before the uploaded bytes are checked.
+    run("gh", "release", "create", tag, "--repo", REPOSITORY, "--verify-tag", "--draft",
+        "--title", "OpenTLV Python " + package["version"], "--notes-file", NOTES, *sorted(directory.iterdir()))
+    drafts = [item for item in api(f"repos/{REPOSITORY}/releases?per_page=100") if item.get("tag_name") == tag]
+    require(len(drafts) == 1, "Missing or duplicate draft release")
+    verify_published(api(f"repos/{REPOSITORY}/releases/{drafts[0]['id']}"), directory, tag,
+                     current["commit"], True)
+    run("gh", "release", "edit", tag, "--repo", REPOSITORY, "--draft=false")
+    released = api(f"repos/{REPOSITORY}/releases/{drafts[0]['id']}")
+    verify_published(released, directory, tag, current["commit"], False)
     write(ROOT / "build/docs-release/release.json", {
         "schema": 1, "kind": "component-release", "status": "published", "source": "python",
         "repository": REPOSITORY, "commit": current["commit"], "workflow_commit": current["commit"],

@@ -25,6 +25,7 @@ path = [
     "docs/guides/python.md",
     "docs/migration.md",
     "docs/quality-gates.md",
+    "docs/release-notes.md",
     "docs/releases.md",
     "docs/validation/ci.json",
     "docs/validation/ci.md",

@@ -5,19 +5,34 @@
 import argparse
 from pathlib import Path
 import os
+import re
 import shutil
 import tempfile
 import zipfile
 
-from build_support import digest, read, require, write
+from build_support import ROOT, digest, read, require, write
 from ci_contract import REPOSITORY, definition_hashes, identity, validate_records
 from package_contract import policy, validate_bundle
 from verified_core import lock
+
+NOTES = ROOT / "docs/release-notes.md"
+CHANGELOG = ROOT / "CHANGELOG.md"
+
+
+def release_text(version):
+    """Require the versioned publication notes and a changelog closed for this version."""
+    notes = NOTES.read_text(encoding="utf-8")
+    require(notes.startswith(f"# OpenTLV Python v{version}\n") and
+            re.search(r"^- \S", notes, re.MULTILINE), "Missing versioned release notes")
+    changelog = CHANGELOG.read_text(encoding="utf-8")
+    require(re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE),
+            "Close the changelog under the release version and date")
 
 
 def preflight():
     pinned = lock(True)
     package = policy()
+    release_text(package["version"])
     current = identity()
     require(current["hosted"] and not current["dirty"] and current["repository"] == REPOSITORY,
             "Release preparation requires the official clean hosted checkout")

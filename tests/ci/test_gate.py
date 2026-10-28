@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import ci_contract as contract
+import verified_core
 from build_support import ROOT, read
 from package_contract import DISTRIBUTIONS, policy as package_policy
 
@@ -17,6 +18,12 @@ IDENTITY = {"repository": contract.REPOSITORY, "commit": "a" * 40, "run_id": "10
             "run_attempt": "2", "hosted": True, "dirty": False}
 DEFINITIONS = {"scripts/ci.py": "b" * 64}
 CHECKS = {name: {"result": "success"} for name in ("build", "quality", "codeql")}
+
+
+def null_lock(monkeypatch):
+    """Select the committed Core commit without a release tag, as before Core v0.8.0."""
+    pinned = verified_core.lock()
+    monkeypatch.setattr(verified_core, "read", lambda _: {**pinned, "release_tag": None})
 
 
 def records(tier="pr"):
@@ -33,8 +40,8 @@ def records(tier="pr"):
              "runtime": {"system": item["system"], "python": item["python"] + ".1"},
              "compiler": {"COMPILER_ID": "Clang", "COMPILER_VERSION": "18.0",
                           "SYSTEM": item["system"], "SIZEOF_DATA_PTR": "8", "CROSS_COMPILING": "FALSE"},
-             "core": {key: pinned[key] for key in ("repository", "commit", "version")}
-             | {"mode": "pinned-git", "verified": False, "dirty": False},
+             "core": {key: pinned[key] for key in ("repository", "commit", "version", "release_tag")}
+             | {"mode": "verified-source", "verified": True, "release_id": 1, "manifest_sha256": "f" * 64},
              "smoke": True, "wheels": {"opentlv": "c" * 64, "opentlv-core": "d" * 64},
              "package_version": version, "package_versions": dict.fromkeys(DISTRIBUTIONS, version),
              "artifacts": dict(artifacts),
@@ -63,8 +70,9 @@ def test_complete_gate(tier):
     (("definitions", "scripts/ci.py"), "e" * 64),
     (("configuration", "python"), "3.12"), (("configuration", "id"), "unknown"),
     (("runtime", "system"), "Windows"), (("runtime", "python"), "3.12.1"),
-    (("core", "commit"), "f" * 40), (("core", "dirty"), True),
-    (("core", "mode"), "local-source"), (("core", "verified"), True),
+    (("core", "commit"), "f" * 40), (("core", "release_tag"), "v0.7.1"),
+    (("core", "release_id"), None), (("core", "manifest_sha256"), "bad"),
+    (("core", "mode"), "pinned-git"), (("core", "mode"), "local-source"), (("core", "verified"), False),
     (("tests", "tests"), 1), (("tests", "skipped"), 1), (("tests", "errors"), 1),
     (("tests", "failures"), 1), (("examples",), 7), (("query", "checks"), 663),
     (("query", "fixtures"), 170), (("packaging",), "none"), (("smoke",), False),
@@ -111,7 +119,25 @@ def test_rejects_missing_prerequisite():
         contract.validate_records(records(), "pr", IDENTITY, DEFINITIONS, {"build": CHECKS["build"]})
 
 
-def test_release_fails_with_current_null_lock():
+def test_committed_lock_selects_attested_core_080():
+    pinned = contract.lock(True)
+    assert pinned["release_tag"] == "v0.8.0"
+    assert pinned["commit"] == "345c77acb29266036df5f27d04ce315bb61853cc"
+
+
+def test_null_lock_requires_clean_pinned_git(monkeypatch):
+    null_lock(monkeypatch)
+    data = records()
+    data[0]["core"] = {key: data[0]["core"][key] for key in ("repository", "commit", "version")}
+    data[0]["core"].update(mode="pinned-git", verified=False, dirty=False)
+    assert contract.validate_records(data, "pr", IDENTITY, DEFINITIONS, CHECKS)["status"] == "success"
+    data[0]["core"]["dirty"] = True
+    with pytest.raises(ValueError, match="clean pinned"):
+        contract.validate_records(data, "pr", IDENTITY, DEFINITIONS, CHECKS)
+
+
+def test_release_fails_with_null_lock(monkeypatch):
+    null_lock(monkeypatch)
     data = records("full")
     for record in data:
         record["require_release"] = True
@@ -119,11 +145,11 @@ def test_release_fails_with_current_null_lock():
         contract.validate_records(data, "full", IDENTITY, DEFINITIONS, CHECKS, True)
 
 
-def test_release_requires_attestation_even_after_lock_update(monkeypatch):
-    pinned = contract.lock()
-    monkeypatch.setattr(contract, "lock", lambda _=False: {**pinned, "release_tag": "v" + pinned["version"]})
+def test_release_requires_attestation():
+    core = records()[0]["core"]
+    contract.validate_dependency(core, True)
     with pytest.raises(ValueError, match="attestation"):
-        contract.validate_dependency(records()[0]["core"], True)
+        contract.validate_dependency({**core, "mode": "pinned-git", "verified": False}, True)
 
 
 @pytest.mark.parametrize("extra", ["skipped", "failure", "error"])
@@ -156,9 +182,10 @@ def test_junit_rejects_failure_hidden_by_success_counters(tmp_path):
         contract.junit_counts(path)
 
 
-def test_failed_build_invalidates_stale_success(tmp_path):
+def test_failed_build_invalidates_stale_success(tmp_path, monkeypatch):
     import argparse
     import ci
+    null_lock(monkeypatch)
     output = tmp_path / "record.json"
     output.write_text('{"status": "success"}')
     args = argparse.Namespace(output=output, require_release=True, tier="full")

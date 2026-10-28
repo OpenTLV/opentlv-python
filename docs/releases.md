@@ -9,11 +9,17 @@ No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
 
 1. Select a real authenticated Core schema-2 release. Update the exact Core
    commit/version/tag in `cmake/core-artifact.json` and validate its compatibility
-   with `cmake/python-package.json`. The current null release tag deliberately
-   causes preflight to fail; do not bypass it or relabel pinned Git as verified.
+   with `cmake/python-package.json`. A null release tag causes preflight to fail;
+   do not bypass it or relabel pinned Git as verified. Python 0.1.0 locks Core
+   `v0.8.0` at `345c77acb29266036df5f27d04ce315bb61853cc`.
 2. Select the independent Python version as described in [versioning](versioning.md).
-   Merge the reviewed candidate to `main` and dispatch the workflow there.
-3. Preflight requires the official clean checkout. Full CI runs in the same
+   Write [`docs/release-notes.md`](release-notes.md), starting with
+   `# OpenTLV Python v<version>`, and close the `Unreleased` changelog section as
+   `## [<version>] - <YYYY-MM-DD>`. Both files belong to the hashed CI definitions,
+   so change them before the Full run. Merge the reviewed candidate to `main`,
+   wait for its Main CI to pass and dispatch the workflow there.
+3. Preflight requires the official clean checkout, the versioned release notes
+   and the closed changelog section. Full CI runs in the same
    workflow run with verified Core required across all 15 existing configurations.
    Source quality, CodeQL, installed API tests, examples, Query and package checks
    must pass. Dependency verification failures stop the build.
@@ -48,7 +54,10 @@ is `v<package version>` and must be a stable version matching both distributions
 The publisher requires successful Full and assembly jobs, the exact current
 run/attempt, unchanged candidate metadata and checksums, and valid attestations
 for all three candidate files. It then creates the tag at the dispatch commit
-and uploads those files to the GitHub Release. It never uploads packages to PyPI.
+and uploads those files to a draft GitHub Release whose text is
+`docs/release-notes.md`. Before and after publishing the draft, it checks the
+tag commit, the release text and every uploaded asset's name, size and SHA-256
+digest. It never uploads packages to PyPI.
 
 Only after GitHub confirms a published release does the workflow upload
 `component-release-<attempt>` containing `release.json`. The separate

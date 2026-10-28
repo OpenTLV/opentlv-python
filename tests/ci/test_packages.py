@@ -18,7 +18,7 @@ from build_support import ROOT, digest, read, write
 import ci_contract
 import package_contract as packages
 import release
-from test_gate import CHECKS, IDENTITY, records
+from test_gate import CHECKS, IDENTITY, null_lock, records
 
 
 def metadata(name, value):
@@ -296,9 +296,39 @@ def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation
     assert not output.exists()
 
 
-def test_release_preflight_rejects_current_null_lock():
+def test_release_preflight_rejects_null_lock(monkeypatch):
+    null_lock(monkeypatch)
     with pytest.raises(ValueError, match="published Core"):
         release.preflight()
+
+
+def test_committed_release_notes_and_changelog_match_version():
+    release.release_text(packages.policy()["version"])
+    with pytest.raises(ValueError, match="release notes"):
+        release.release_text("9.9.9")
+
+
+NOTES = "# OpenTLV Python v0.1.0\n\n- Bullet.\n"
+CLOSED = "## [0.1.0] - 2026-10-28\n"
+
+
+@pytest.mark.parametrize("notes,changelog,message", [
+    ("# OpenTLV Python v0.1.0\n\nNo bullet.\n", CLOSED, "release notes"),
+    (NOTES.replace("v0.1.0", "v0.1.1"), CLOSED, "release notes"),
+    (NOTES, "## [Unreleased]\n", "changelog"),
+    (NOTES, "## [0.1.0]\n", "changelog"),
+    (NOTES, CLOSED, None)])
+def test_release_text_requires_versioned_notes_and_closed_changelog(tmp_path, monkeypatch, notes,
+                                                                     changelog, message):
+    (tmp_path / "notes.md").write_text(notes, encoding="utf-8")
+    (tmp_path / "CHANGELOG.md").write_text("# Changelog\n\n" + changelog, encoding="utf-8")
+    monkeypatch.setattr(release, "NOTES", tmp_path / "notes.md")
+    monkeypatch.setattr(release, "CHANGELOG", tmp_path / "CHANGELOG.md")
+    if message is None:
+        release.release_text("0.1.0")
+    else:
+        with pytest.raises(ValueError, match=message):
+            release.release_text("0.1.0")
 
 
 @pytest.mark.parametrize("key,value", [("hosted", False), ("dirty", True), ("repository", "other/repo")])

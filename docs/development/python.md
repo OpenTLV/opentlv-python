@@ -208,7 +208,7 @@ checks, source selections and limitations.
 
 Both Python distribution versions are `0.1.0`. `opentlv.__version__` and
 `_opentlv.version_string()` report that Python binding version, generated from
-`cmake/python-package.json` during configuration. Core remains `0.7.1` in the
+`cmake/python-package.json` during configuration. Core `0.8.0` is in the
 dependency lock and installed dependency metadata; it no longer supplies the
 public Python version string. See [versioning](../versioning.md) and
 [release preparation](../releases.md).
