@@ -1,8 +1,10 @@
 # Python release preparation
 
 `Python release preparation` (`python-release.yml`) is a manual candidate gate.
-By default it produces an attested candidate. The optional `publish_release`
-input also creates the version tag and a GitHub Release after verification.
+Every dispatch names the release with the required `tag` input, for example
+`v0.1.0`. By default it produces an attested candidate for that tag. The
+optional `publish_release` input also creates exactly that tag and a GitHub
+Release after verification.
 No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
 
 ## Prepare a candidate
@@ -17,10 +19,16 @@ No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
    `# OpenTLV Python v<version>`, and close the `Unreleased` changelog section as
    `## [<version>] - <YYYY-MM-DD>`. Both files belong to the hashed CI definitions,
    so change them before the Full run. Merge the reviewed candidate to `main`,
-   wait for its Main CI to pass and dispatch the workflow there.
-3. Preflight requires the official clean checkout, the versioned release notes
-   and the closed changelog section. Full CI runs in the same
-   workflow run with verified Core required across all 15 existing configurations.
+   wait for its Main CI to pass and dispatch the workflow there with
+   `tag: v<version>`.
+3. Preflight requires a manual dispatch from `main` on the official clean
+   checkout. It rejects a missing or malformed tag (only stable
+   `vMAJOR.MINOR.PATCH`), a tag that differs from the version of both
+   distributions, release notes that do not start with `# OpenTLV Python <tag>`,
+   a changelog without the closed section, and a tag or GitHub Release that
+   already exists. It never derives a tag from the metadata. Full CI runs in the
+   same workflow run with verified Core required across all 15 existing
+   configurations.
    Source quality, CodeQL, installed API tests, examples, Query and package checks
    must pass. Dependency verification failures stop the build.
 4. Assembly validates the exact repository, dispatch SHA, run ID and attempt,
@@ -30,8 +38,8 @@ No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
 5. Download `python-release-candidate-<attempt>` from that run. It contains
    `opentlv-python-<version>.zip`, `manifest.json` and `SHA256SUMS`. The ZIP keeps
    each configuration's actual tested wheels/sdists, record and shared quality
-   report. The manifest binds each internal file, the Python policy, migration
-   baseline and Core lock to the exact run. All three top-level files receive
+   report. The manifest binds the requested tag, each internal file, the Python
+   policy, migration baseline and Core lock to the exact run. All three top-level files receive
    GitHub build-provenance attestations before artifact upload.
 
 Rerun all jobs when retrying. Earlier attempts' packages or quality reports are
@@ -49,11 +57,13 @@ records are evidence, while the hosted attestation authenticates their origin.
 ## GitHub release and documentation publication
 
 To release the verified candidate on GitHub, dispatch the same workflow from
-`main` with `publish_release: true`. Do not create the tag beforehand. The tag
-is `v<package version>` and must be a stable version matching both distributions.
-The publisher requires successful Full and assembly jobs, the exact current
-run/attempt, unchanged candidate metadata and checksums, and valid attestations
-for all three candidate files. It then creates the tag at the dispatch commit
+`main` with the `tag` and `publish_release: true`. Do not create the tag
+beforehand. With `publish_release: false`, the run creates no tag or release.
+The publisher repeats the preflight checks for the requested tag and requires
+successful Full and assembly jobs, the exact current run/attempt, a candidate
+assembled for the same tag, unchanged candidate metadata and checksums, and
+valid attestations for all three candidate files. It then creates the requested
+tag at the dispatch commit
 and uploads those files to a draft GitHub Release whose text is
 `docs/release-notes.md`. Before and after publishing the draft, it checks the
 tag commit, the release text and every uploaded asset's name, size and SHA-256

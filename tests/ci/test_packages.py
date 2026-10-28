@@ -236,7 +236,7 @@ def release_fixture(tmp_path, monkeypatch):
     pinned = ci_contract.lock()
     verified = {**pinned, "release_tag": "v" + pinned["version"]}
     monkeypatch.setattr(ci_contract, "lock", lambda *_: verified)
-    monkeypatch.setattr(release, "preflight", lambda: (IDENTITY, packages.policy(), verified))
+    monkeypatch.setattr(release, "preflight", lambda tag: (IDENTITY, packages.policy(), verified))
     monkeypatch.setattr(release, "definition_hashes", lambda: {})
     evidence = tmp_path / "evidence"
     for record in data:
@@ -254,9 +254,10 @@ def release_fixture(tmp_path, monkeypatch):
 
 def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypatch):
     evidence, quality, output = release_fixture(tmp_path, monkeypatch)
-    release.assemble(evidence, quality, output)
+    release.assemble(evidence, quality, output, "v0.1.0")
     manifest = read(output / "manifest.json")
     assert manifest["publication_enabled"] is False
+    assert manifest["tag"] == "v0.1.0"
     assert manifest["identity"] == IDENTITY
     assert len(manifest["configurations"]) == 15
     for line in (output / "SHA256SUMS").read_text().splitlines():
@@ -268,7 +269,7 @@ def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypat
         for name, sha in manifest["files"].items():
             assert hashlib.sha256(archive.read(name)).hexdigest() == sha
     with pytest.raises(ValueError, match="fresh"):
-        release.assemble(evidence, quality, output)
+        release.assemble(evidence, quality, output, "v0.1.0")
 
 
 @pytest.mark.parametrize("mutation", ["attempt", "missing", "digest", "quality", "unverified"])
@@ -292,62 +293,126 @@ def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation
             record["core"]["verified"] = False
         write(path, record)
     with pytest.raises(ValueError):
-        release.assemble(evidence, quality, output)
+        release.assemble(evidence, quality, output, "v0.1.0")
     assert not output.exists()
+
+
+def remote(monkeypatch, refs=(), releases=()):
+    """Serve the tag and release listings that preflight reads before any remote write."""
+    calls = []
+
+    def api(path):
+        calls.append(path)
+        if "/git/matching-refs/tags/" in path:
+            return [{"ref": "refs/tags/" + name} for name in refs]
+        assert "/releases?" in path
+        return [{"tag_name": name} for name in releases]
+    monkeypatch.setattr(release, "api", api)
+    return calls
 
 
 def test_release_preflight_rejects_null_lock(monkeypatch):
     null_lock(monkeypatch)
     with pytest.raises(ValueError, match="published Core"):
-        release.preflight()
+        release.preflight("v0.1.0")
 
 
-def test_committed_release_notes_and_changelog_match_version():
-    release.release_text(packages.policy()["version"])
-    with pytest.raises(ValueError, match="release notes"):
-        release.release_text("9.9.9")
+def test_committed_release_notes_and_changelog_match_requested_tag():
+    version = packages.policy()["version"]
+    release.release_text("v" + version, version)
+    with pytest.raises(ValueError, match="package version"):
+        release.release_text("v9.9.9", version)
+
+
+@pytest.mark.parametrize("tag", ["", "0.1.0", "v0.1", "v0.1.0.0", "v01.1.0", "v0.1.0-rc.1", "V0.1.0",
+                                 " v0.1.0", "v0.1.0\n", "refs/tags/v0.1.0"])
+def test_release_text_rejects_malformed_tag(tag):
+    with pytest.raises(ValueError, match="vMAJOR"):
+        release.release_text(tag, "0.1.0")
 
 
 NOTES = "# OpenTLV Python v0.1.0\n\n- Bullet.\n"
 CLOSED = "## [0.1.0] - 2026-10-28\n"
 
 
-@pytest.mark.parametrize("notes,changelog,message", [
-    ("# OpenTLV Python v0.1.0\n\nNo bullet.\n", CLOSED, "release notes"),
-    (NOTES.replace("v0.1.0", "v0.1.1"), CLOSED, "release notes"),
-    (NOTES, "## [Unreleased]\n", "changelog"),
-    (NOTES, "## [0.1.0]\n", "changelog"),
-    (NOTES, CLOSED, None)])
-def test_release_text_requires_versioned_notes_and_closed_changelog(tmp_path, monkeypatch, notes,
-                                                                     changelog, message):
+@pytest.mark.parametrize("tag,notes,changelog,message", [
+    ("v0.1.1", NOTES, CLOSED, "package version"),
+    ("v0.1.0", "# OpenTLV Python v0.1.0\n\nNo bullet.\n", CLOSED, "release notes"),
+    ("v0.1.0", NOTES.replace("v0.1.0", "v0.1.1"), CLOSED, "release notes"),
+    ("v0.1.0", NOTES, "## [Unreleased]\n", "changelog"),
+    ("v0.1.0", NOTES, "## [0.1.0]\n", "changelog"),
+    ("v0.1.0", NOTES, "## [0.1.1] - 2026-10-28\n", "changelog"),
+    ("v0.1.0", NOTES, CLOSED, None)])
+def test_release_text_requires_matching_notes_and_closed_changelog(tmp_path, monkeypatch, tag, notes,
+                                                                   changelog, message):
     (tmp_path / "notes.md").write_text(notes, encoding="utf-8")
     (tmp_path / "CHANGELOG.md").write_text("# Changelog\n\n" + changelog, encoding="utf-8")
     monkeypatch.setattr(release, "NOTES", tmp_path / "notes.md")
     monkeypatch.setattr(release, "CHANGELOG", tmp_path / "CHANGELOG.md")
     if message is None:
-        release.release_text("0.1.0")
+        release.release_text(tag, "0.1.0")
     else:
         with pytest.raises(ValueError, match=message):
-            release.release_text("0.1.0")
+            release.release_text(tag, "0.1.0")
+
+
+def test_requested_tag_is_required(monkeypatch):
+    monkeypatch.delenv("RELEASE_TAG", raising=False)
+    with pytest.raises(ValueError, match="explicit tag"):
+        release.requested_tag()
+    monkeypatch.setenv("RELEASE_TAG", "")
+    with pytest.raises(ValueError, match="explicit tag"):
+        release.requested_tag()
+    monkeypatch.setenv("RELEASE_TAG", "v0.1.0")
+    assert release.requested_tag() == "v0.1.0"
+
+
+@pytest.mark.parametrize("refs,releases,message", [
+    (["v0.1.0"], [], "tag already exists"), ([], ["v0.1.0"], "release already exists"),
+    (["v0.1.0-rc.1"], ["v0.0.9"], None)])
+def test_release_tag_must_be_unused(monkeypatch, refs, releases, message):
+    remote(monkeypatch, refs, releases)
+    if message is None:
+        release.unused_tag("v0.1.0")
+    else:
+        with pytest.raises(ValueError, match=message):
+            release.unused_tag("v0.1.0")
 
 
 @pytest.mark.parametrize("key,value", [("hosted", False), ("dirty", True), ("repository", "other/repo")])
 def test_release_preflight_rejects_untrusted_identity(monkeypatch, key, value):
     monkeypatch.setattr(release, "lock", lambda *_: {})
     monkeypatch.setattr(release, "identity", lambda: {**IDENTITY, key: value})
+    calls = remote(monkeypatch)
     with pytest.raises(ValueError, match="official clean hosted"):
-        release.preflight()
+        release.preflight("v0.1.0")
+    assert not calls
 
 
 def test_release_preflight_requires_manual_main(monkeypatch):
     monkeypatch.setattr(release, "lock", lambda *_: {})
     monkeypatch.setattr(release, "identity", lambda: copy.deepcopy(IDENTITY))
+    remote(monkeypatch)
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setenv("GITHUB_REF", "refs/heads/feature/test")
     with pytest.raises(ValueError, match="main"):
-        release.preflight()
+        release.preflight("v0.1.0")
     monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
-    assert release.preflight()[0] == IDENTITY
+    assert release.preflight("v0.1.0")[0] == IDENTITY
     monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
     with pytest.raises(ValueError, match="main"):
-        release.preflight()
+        release.preflight("v0.1.0")
+
+
+def test_release_preflight_rejects_existing_or_mismatched_tag(monkeypatch):
+    monkeypatch.setattr(release, "lock", lambda *_: {})
+    monkeypatch.setattr(release, "identity", lambda: copy.deepcopy(IDENTITY))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    remote(monkeypatch, refs=["v0.1.0"])
+    with pytest.raises(ValueError, match="already exists"):
+        release.preflight("v0.1.0")
+    calls = remote(monkeypatch)
+    with pytest.raises(ValueError, match="package version"):
+        release.preflight("v0.2.0")
+    assert not calls

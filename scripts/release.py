@@ -10,7 +10,7 @@ import shutil
 import tempfile
 import zipfile
 
-from build_support import ROOT, digest, read, require, write
+from build_support import ROOT, api, digest, read, require, write
 from ci_contract import REPOSITORY, definition_hashes, identity, validate_records
 from package_contract import policy, validate_bundle
 from verified_core import lock
@@ -19,31 +19,49 @@ NOTES = ROOT / "docs/release-notes.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
 
 
-def release_text(version):
-    """Require the versioned publication notes and a changelog closed for this version."""
+def requested_tag():
+    """Return the tag requested by the release dispatch; it is never derived from metadata."""
+    tag = os.environ.get("RELEASE_TAG", "")
+    require(tag, "Dispatch the release with an explicit tag")
+    return tag
+
+
+def release_text(tag, version):
+    """Require the tag to match the package version, the release notes and the closed changelog."""
+    require(re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", tag),
+            "Use a stable vMAJOR.MINOR.PATCH release tag")
+    require(tag == "v" + version, "Release tag differs from the Python package version")
     notes = NOTES.read_text(encoding="utf-8")
-    require(notes.startswith(f"# OpenTLV Python v{version}\n") and
+    require(notes.startswith(f"# OpenTLV Python {tag}\n") and
             re.search(r"^- \S", notes, re.MULTILINE), "Missing versioned release notes")
     changelog = CHANGELOG.read_text(encoding="utf-8")
     require(re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE),
             "Close the changelog under the release version and date")
 
 
-def preflight():
+def unused_tag(tag):
+    refs = api(f"repos/{REPOSITORY}/git/matching-refs/tags/{tag}")
+    require(not any(ref.get("ref") == "refs/tags/" + tag for ref in refs), "Release tag already exists")
+    releases = api(f"repos/{REPOSITORY}/releases?per_page=100")
+    require(not any(item.get("tag_name") == tag for item in releases), "GitHub release already exists")
+
+
+def preflight(tag):
     pinned = lock(True)
     package = policy()
-    release_text(package["version"])
+    release_text(tag, package["version"])
     current = identity()
     require(current["hosted"] and not current["dirty"] and current["repository"] == REPOSITORY,
             "Release preparation requires the official clean hosted checkout")
     require(os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and
             os.environ.get("GITHUB_REF") == "refs/heads/main",
             "Dispatch release preparation from main")
+    unused_tag(tag)
     return current, package, pinned
 
 
-def assemble(evidence, quality_path, output):
-    current, package, pinned = preflight()
+def assemble(evidence, quality_path, output, tag):
+    current, package, pinned = preflight(tag)
     definitions = definition_hashes()
     require(not output.exists(), "Release output must be fresh")
     paths = sorted(evidence.rglob("record.json"))
@@ -73,7 +91,7 @@ def assemble(evidence, quality_path, output):
         write(payload / "quality.json", quality)
         files["quality.json"] = digest(payload / "quality.json")
         manifest = {"schema": 1, "kind": "python-release-candidate", "publication_enabled": False,
-                    "package": package, "core_lock": pinned, "identity": current,
+                    "tag": tag, "package": package, "core_lock": pinned, "identity": current,
                     "definitions": definitions, "configurations": expected["configurations"],
                     "run_url": f'https://github.com/{REPOSITORY}/actions/runs/{current["run_id"]}/attempts/{current["run_attempt"]}',
                     "files": files}
@@ -88,7 +106,7 @@ def assemble(evidence, quality_path, output):
             bundle.write(candidate / "manifest.json", "manifest.json")
         sums = "".join(f"{digest(path)}  {path.name}\n" for path in sorted(candidate.iterdir()))
         (candidate / "SHA256SUMS").write_text(sums, encoding="utf-8")
-        require(preflight() == (current, package, pinned) and definition_hashes() == definitions,
+        require(preflight(tag) == (current, package, pinned) and definition_hashes() == definitions,
                 "Release inputs changed during assembly")
         candidate.rename(output)
 
@@ -103,9 +121,9 @@ def main():
     prepare.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "preflight":
-        preflight()
+        preflight(requested_tag())
     else:
-        assemble(args.evidence, args.quality, args.output)
+        assemble(args.evidence, args.quality, args.output, requested_tag())
 
 
 if __name__ == "__main__":
