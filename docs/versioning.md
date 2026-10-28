@@ -27,17 +27,19 @@ assert opentlv.__version__ == _opentlv.version_string() == version("opentlv")
 assert version("opentlv") == version("opentlv-core")
 ```
 
-The initial supported Core version is exactly **0.7.1**. No broader range is
-claimed without validation. `compatible_core_versions` lists tested versions;
+The first Python release, **0.1.0**, supports exactly Core **0.8.0**; the
+unreleased migration builds used Core 0.7.1. No broader range is claimed
+without validation. `compatible_core_versions` lists tested versions;
 `cmake/core-artifact.json` pins the exact Core commit and optional authenticated
 release used for builds. A future Python tag `vMAJOR.MINOR.PATCH` identifies the
 Python release and its checked-in Core lock. Core version changes do not
 automatically change the Python version. Decide each binding release explicitly.
 
 The installed `_opentlv_core_dependency.json` continues to identify the selected
-Core for build validation and diagnostics. Official release preparation requires
-an attested Core release; the current `release_tag: null` permits pinned-Git
-development builds only.
+Core for build validation and diagnostics. The lock names the attested Core
+release `v0.8.0` at `345c77acb29266036df5f27d04ce315bb61853cc`; every default
+build verifies its release artifacts, and official release preparation
+additionally rejects a lock without a release tag.
 
 The original migration baseline is permanently recorded separately: Core commit
 `5e0aae9c77e9c22d07c7f03d6110243e9ecad85f` and the SHA-256 of
@@ -46,8 +48,10 @@ rewrite that historical inventory. The policy and native sdist retain this
 provenance. Historical validation records keep their original version semantics.
 
 To prepare a new binding release, update the policy, both project versions and
-the exact facade dependency together; run source checks and installed-package
-Full validation, then follow [release preparation](releases.md). The initial
+the exact facade dependency together, write the versioned
+[release notes](release-notes.md) and close the [changelog](../CHANGELOG.md);
+run source checks and installed-package Full validation, then follow
+[release preparation](releases.md). The initial
 policy accepts stable `MAJOR.MINOR.PATCH` versions. The optional GitHub publisher
 creates `v<version>` only after verified Full CI; package-index publication
 requires the separate work described in the release guide.

@@ -31,6 +31,12 @@ def release_lock():
 
 
 @pytest.fixture
+def null_lock(monkeypatch):
+    """Select the locked commit through pinned Git, as a lock without a release tag does."""
+    monkeypatch.setattr(verified, "read", lambda _: {**PIN, "release_tag": None})
+
+
+@pytest.fixture
 def probe():
     return {"COMPILER_ID": "MSVC", "COMPILER_VERSION": "19.44", "SIZEOF_DATA_PTR": "8",
             "SYSTEM": "Windows", "COMPILER_ARCHITECTURE": "x64", "PROCESSOR": "AMD64",
@@ -65,7 +71,14 @@ def manifest(release_lock):
                            "version": VERSION, "commit": COMMIT}]}
 
 
-def test_lock_requires_release():
+def test_committed_lock_selects_core_080():
+    selected = verified.lock(True)
+    assert selected["version"] == "0.8.0" and selected["release_tag"] == "v0.8.0"
+    assert selected["commit"] == "345c77acb29266036df5f27d04ce315bb61853cc"
+    assert selected["allow_verified_source"] is True
+
+
+def test_null_lock_cannot_require_release(null_lock):
     with pytest.raises(ValueError, match="published Core"):
         verified.lock(True)
 
@@ -98,7 +111,7 @@ def test_local_identity_is_recorded(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("field,value", [("commit", "b" * 40), ("version", "0.0.0"), ("dirty", True)])
-def test_pinned_source_mismatch(monkeypatch, tmp_path, field, value):
+def test_pinned_source_mismatch(monkeypatch, tmp_path, null_lock, field, value):
     (tmp_path / "source").mkdir()
     identity = {"commit": COMMIT, "version": VERSION, "dirty": False, field: value}
     monkeypatch.setattr(dependency, "git_identity", lambda _: identity)
@@ -106,7 +119,7 @@ def test_pinned_source_mismatch(monkeypatch, tmp_path, field, value):
         dependency.select(tmp_path, {}, "Release")
 
 
-def test_pinned_source_positive(monkeypatch, tmp_path):
+def test_pinned_source_positive(monkeypatch, tmp_path, null_lock):
     (tmp_path / "source").mkdir()
     monkeypatch.setattr(dependency, "git_identity",
                         lambda _: {"commit": COMMIT, "version": VERSION, "dirty": False})
@@ -114,7 +127,7 @@ def test_pinned_source_positive(monkeypatch, tmp_path):
     assert result["mode"] == "pinned-git" and not result["verified"]
 
 
-def test_unavailable_commit_stops(monkeypatch, tmp_path):
+def test_unavailable_commit_stops(monkeypatch, tmp_path, null_lock):
     command = Mock(side_effect=subprocess.CalledProcessError(128, ["git", "clone"]))
     monkeypatch.setattr(dependency, "run", command)
     with pytest.raises(subprocess.CalledProcessError):
@@ -129,6 +142,16 @@ def test_failed_attestation_never_falls_back(monkeypatch, tmp_path, release_lock
     monkeypatch.setattr(dependency, "run", git)
     with pytest.raises(ValueError, match="attestation"):
         dependency.select(tmp_path, {}, "Release")
+    git.assert_not_called()
+
+
+def test_committed_lock_resolves_release_artifacts(monkeypatch, tmp_path):
+    resolve = Mock(return_value={"mode": "verified-source", "verified": True})
+    monkeypatch.setattr(dependency, "resolve", resolve)
+    git = Mock()
+    monkeypatch.setattr(dependency, "run", git)
+    assert dependency.select(tmp_path, {}, "Release")["mode"] == "verified-source"
+    resolve.assert_called_once()
     git.assert_not_called()
 
 

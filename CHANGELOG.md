@@ -2,10 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - 2026-10-28
 
 ### Changed
 
+- Prepare the first Python release as `0.1.0` for both distributions, independently of Core. Pin Core `v0.8.0` at `345c77acb29266036df5f27d04ce315bb61853cc`, so every build consumes its authenticated release artifacts instead of a pinned Git checkout; the pin adds and removes no public symbols and core coverage stays 213/213 (100.0 %). Release preparation requires versioned release notes in `docs/release-notes.md` and a changelog section closed for the version, both part of the hashed CI definitions. Publication uploads a draft GitHub release with those notes instead of generated ones, checks the tag commit, the notes and every uploaded asset's size and digest, and only then publishes it. The README documents the GitHub CLI requirement and the fourteen examples. PyPI publication remains separate. (#42)
 - Normalize Python licensing and community policies to the Workspace reference: `REUSE.toml` annotates documentation, configuration and frozen migration evidence by explicit path, `LICENSES/MIT.txt` supplies the license text, and the source quality check runs `reuse lint` with the pinned REUSE 6.2.0. The contributor guide documents copyright attribution, source headers and packaged license notices; it, the README and the development guide link the shared `OpenTLV/.github` contribution, conduct, security and support policies. (#33)
 - `QueryProgram` with static names compiles directly through `tlv_query_compile_scratch()` and `tlv_query_compile()`; a `resolve` callback keeps checked preparation and commit, and both produce the same image. `QueryExecution.reset()` resets in place through `tlv_query_exec_reset()`, keeping its program, providers, workspace and budgets. Document evaluation without `value_capacity` measures the Value snapshot with `tlv_document_query_value_size()` only for programs that read constructed Values, instead of always sizing the whole encoded Document. `Query.visit_buffer()` traverses complete input through `tlv_query_visit_buffer()` without a Reader and takes only `max_depth` and `max_elements` limits. (#22)
 - Normalize Python sources under `src/opentlv`, native code under `native`, and standalone tests/examples; update packaging, validation and development paths without changing package identities or API. (#10)

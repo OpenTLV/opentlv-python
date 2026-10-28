@@ -226,9 +226,13 @@ validates the selected repository, full SHA, version, public target headers and
 required features. Installed dependency metadata must exactly match the build
 selection. Local source overrides are prohibited in hosted CI.
 
-With the current `release_tag: null`, ordinary PR/Main/Full builds use a clean
-Git checkout at the locked SHA and record `verified: false`. This is exact source
-identity, not an authenticated Core release. A release caller must invoke:
+The lock names the Core release `v0.8.0`, so ordinary PR/Main/Full builds
+consume its authenticated release artifacts and record `verified: true` with a
+`verified-binary` or `verified-source` selection, the release ID and the
+manifest SHA-256. Compatible authenticated Core binaries are preferred;
+otherwise the verified-source fallback policy applies. Failed attestations,
+checksums or producer evidence stop the build. They never fall back to Git.
+A release caller must invoke:
 
 ```yaml
 jobs:
@@ -238,12 +242,9 @@ jobs:
       require_verified_core: true
 ```
 
-That mode requires Full CI and rejects the current null release lock before
-building. Once an approved matching release is locked, compatible authenticated
-Core binaries are preferred; otherwise the existing verified-source fallback
-policy applies. Failed attestations, checksums or producer evidence stop the
-build. They never fall back to Git. Testing resolver fixtures is not evidence
-that a real published Core attestation was consumed.
+That mode requires Full CI and rejects a lock without a release tag before
+building. Testing resolver fixtures is not evidence that a real published Core
+attestation was consumed.
 
 ## Evidence and required check
 

@@ -5,8 +5,10 @@ for parsing, encoding, and working with TLV and TLV-like binary formats.
 
 ## Install from source
 
-Requires Python 3.11+, Git, a C99 compiler, and CMake 3.26+ (the Python build
-backend can supply CMake). Use a virtual environment:
+Requires Python 3.11+, a C99 compiler, CMake 3.26+ (the Python build backend
+can supply CMake) and an authenticated [GitHub CLI](https://cli.github.com/)
+with `gh attestation verify`, which downloads and verifies the locked Core
+release. Use a virtual environment:
 
 ```sh
 python -m venv .venv
@@ -21,7 +23,7 @@ Both package versions are `0.1.0`; `opentlv.__version__` and
 package requires exactly the matching native package version. Python releases
 are independent of Core. See [versioning](docs/versioning.md).
 
-The default build obtains the exact Core commit and version in
+The default build obtains the exact Core release locked in
 [`cmake/core-artifact.json`](cmake/core-artifact.json). It needs no sibling
 checkout and works from the native package's sdist. Core is linked statically
 into a `cp311-abi3` extension. Every required Core capability and format is
@@ -41,27 +43,25 @@ attested Core is required. Local revisions and dirty state are recorded.
 
 ## Dependency assurance
 
-The current lock selects Core `0.7.1` at
-`5e0aae9c77e9c22d07c7f03d6110243e9ecad85f`. Its `release_tag` is null:
-the default build verifies the Git revision, clean source tree, version,
-public headers, and required features, but **does not claim release attestation**.
-
-When an approved Core schema-2 release is locked, the resolver prefers a
+The lock selects the Core release `v0.8.0` at
+`345c77acb29266036df5f27d04ce315bb61853cc`, so every default build consumes
+its authenticated schema-2 release artifacts. The resolver prefers a
 compatible static binary and checks its SHA-256, GitHub Artifact Attestation,
 signer workflow, source commit, and release evidence before consumption.
 It uses the matching verified source artifact when no compatible binary exists
-and the lock permits source fallback. Verification failures stop the build.
-Release artifact resolution requires authenticated `gh` with attestation support.
+and the lock permits source fallback. Verification failures stop the build
+and never fall back to Git. The build then checks the public headers, version,
+commit and required features.
 
-To require that release path:
+To require that release path explicitly:
 
 ```sh
 python -m pip install . \
   --config-settings=cmake.define.OPENTLV_PYTHON_REQUIRE_VERIFIED_CORE=ON
 ```
 
-This intentionally fails with the current null release lock. A pinned Git
-build is reproducible source selection, not evidence of an attested release.
+This rejects the local Core override and a lock without a release tag. A pinned
+Git build is reproducible source selection, not evidence of an attested release.
 See [build and verification details](docs/development/python.md).
 
 ## Layout and validation
@@ -72,7 +72,7 @@ See [build and verification details](docs/development/python.md).
 | `native/src/` | Existing native extension implementation |
 | `src/pyproject.toml`, `src/opentlv/` | Public `opentlv` distribution metadata and package sources |
 | `tests/python/` | Existing Python API tests |
-| `examples/` | Eleven runnable examples, outside the installed package |
+| `examples/` | Fourteen runnable examples, outside the installed package |
 | `native/common/` | Two binding-owned native adapters |
 | `scripts/check_python.py` | Installed-wheel, pytest, example and Query validation |
 | `tests/build/` | Dependency verification and public Core target tests |
@@ -106,19 +106,20 @@ Manual or reusable Full CI covers CPython 3.11–3.15 on Linux, Windows and macO
 including wheel installation from both source distributions.
 
 The stable `Python quality gate` checks all required results and attempt-scoped
-build evidence. Core's own test suites remain disabled. The current pinned-Git
-dependency is explicitly unattested; release callers must enable
-`require_verified_core`, which rejects the current null release lock.
+build evidence. Core's own test suites remain disabled. Every tier consumes the
+attested Core release; release callers also enable `require_verified_core`,
+which rejects a lock without a release tag.
 See [quality gates and local commands](docs/quality-gates.md) and
 [local validation](docs/validation/ci.md).
 
 CI retains the tested wheels and source distributions alongside their checksums
 and build records. The manual [release preparation](docs/releases.md) runs
 verified-Core Full CI and assembles an attested candidate with a manifest and
-`SHA256SUMS`. The current null Core release lock deliberately blocks that path.
-Set `publish_release: true` to create the version tag and GitHub Release after
+`SHA256SUMS`. Set `publish_release: true` to create the version tag and GitHub
+Release with the versioned [release notes](docs/release-notes.md) after
 verification and automatically notify the documentation portal. The default
-remains candidate-only; PyPI publication is disabled.
+remains candidate-only; PyPI publication is disabled. Release history is in the
+[changelog](CHANGELOG.md).
 
 ## License
 

@@ -29,7 +29,8 @@ def matrix(tier):
 
 def definition_hashes():
     paths = [ROOT / name for name in (
-        "CMakeLists.txt", "pyproject.toml", "requirements-dev.txt", ".clang-format", ".clang-tidy")]
+        "CMakeLists.txt", "pyproject.toml", "requirements-dev.txt", ".clang-format", ".clang-tidy",
+        "CHANGELOG.md", "docs/release-notes.md")]
     for directory in ("scripts", "cmake", "src", "native", "examples", "tests", ".github/workflows"):
         paths.extend(path for path in (ROOT / directory).rglob("*")
                      if path.is_file() and "__pycache__" not in path.parts

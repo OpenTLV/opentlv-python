@@ -28,6 +28,9 @@ def candidate(tmp_path, monkeypatch):
     (directory / "opentlv-python-0.1.0.zip").write_bytes(b"attested-candidate-fixture")
     (directory / "SHA256SUMS").write_text("".join(f"{digest(path)}  {path.name}\n"
                                                for path in sorted(directory.iterdir())))
+    notes = tmp_path / "release-notes.md"
+    notes.write_text("# OpenTLV Python v0.1.0\n\n- Fixture release.\n", encoding="utf-8")
+    monkeypatch.setattr(release, "NOTES", notes)
     monkeypatch.setattr(release, "preflight", lambda: (current, package, pinned))
     monkeypatch.setattr(release, "definition_hashes", lambda: definitions)
     monkeypatch.setattr(release, "ROOT", tmp_path)
@@ -37,14 +40,30 @@ def candidate(tmp_path, monkeypatch):
     producer = {"status": "in_progress", "conclusion": None, "event": "workflow_dispatch",
                 "head_branch": "main", "head_sha": current["commit"], "path": release.WORKFLOW,
                 "run_attempt": 2, "head_repository": {"full_name": release.REPOSITORY}}
-    published = {"id": 456, "tag_name": "v0.1.0", "draft": False, "prerelease": False,
-                 "published_at": "2026-10-21T12:00:00Z"}
-    monkeypatch.setattr(release, "api", lambda path: producer if "/actions/" in path else published)
+    # The created release starts as a draft; `gh release edit --draft=false` publishes it.
+    published = {"id": 456, "tag_name": "v0.1.0", "draft": True, "prerelease": False,
+                 "published_at": None, "body": notes.read_text(encoding="utf-8"),
+                 "assets": [{"name": path.name, "state": "uploaded", "size": path.stat().st_size,
+                             "digest": "sha256:" + digest(path)} for path in directory.iterdir()]}
+    tag = {"sha": current["commit"]}
+
+    def api(path):
+        if "/actions/" in path:
+            return producer
+        if path.endswith("/commits/v0.1.0"):
+            return tag
+        if "/releases?" in path:
+            return [{"id": 1, "tag_name": "v0.0.9"}, published]
+        assert path.endswith("/releases/456")
+        return published
+    monkeypatch.setattr(release, "api", api)
     commands = []
     def run(*args, **kwargs):
         commands.append(args)
         if args[:2] == ("gh", "api"):
             return json.dumps({"object": {"sha": current["commit"]}})
+        if args[:3] == ("gh", "release", "edit"):
+            published.update(draft=False, published_at="2026-10-21T12:00:00Z")
     monkeypatch.setattr(release, "run", run)
     return directory, current, producer, published, commands
 
@@ -58,7 +77,32 @@ def test_opted_in_verified_release_emits_published_receipt(candidate):
                        "workflow_commit": current["commit"], "tag": "v0.1.0", "version": "0.1.0",
                        "run_id": 123, "run_attempt": 2, "release_id": 456}
     assert sum(command[:3] == ("gh", "attestation", "verify") for command in commands) == 3
-    assert any(command[:3] == ("gh", "release", "create") and "--verify-tag" in command for command in commands)
+    create = next(command for command in commands if command[:3] == ("gh", "release", "create"))
+    assert {"--verify-tag", "--draft", "--notes-file"} <= set(create)
+    assert "--generate-notes" not in create
+    assert commands[-1] == ("gh", "release", "edit", "v0.1.0", "--repo", release.REPOSITORY, "--draft=false")
+
+
+@pytest.mark.parametrize("change", ["body", "digest", "size", "missing", "state", "tag"])
+def test_unverified_draft_is_never_published(candidate, change):
+    directory, _, _, published, commands = candidate
+    asset = published["assets"][0]
+    if change == "body":
+        published["body"] = "Generated notes"
+    elif change == "digest":
+        asset["digest"] = "sha256:" + "0" * 64
+    elif change == "size":
+        asset["size"] += 1
+    elif change == "missing":
+        published["assets"].pop()
+    elif change == "state":
+        asset["state"] = "starter"
+    else:
+        release.api(f"repos/{release.REPOSITORY}/commits/v0.1.0")["sha"] = "b" * 40
+    with pytest.raises(ValueError):
+        release.publish(directory)
+    assert not any(command[:3] == ("gh", "release", "edit") for command in commands)
+    assert not (release.ROOT / "build/docs-release/release.json").exists()
 
 
 @pytest.mark.parametrize("key,value", [("PUBLISH_RELEASE", "false"), ("FULL_RESULT", "failure"),
@@ -101,8 +145,10 @@ def test_failed_attestation_or_publication_emits_no_receipt(candidate, monkeypat
     assert not (release.ROOT / "build/docs-release/release.json").exists()
 
 
-def test_draft_release_cannot_emit_published_receipt(candidate):
-    candidate[3]["draft"] = True
+def test_draft_release_cannot_emit_published_receipt(candidate, monkeypatch):
+    commands = candidate[-1]
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: commands.append(args) or (
+        json.dumps({"object": {"sha": "a" * 40}}) if args[:2] == ("gh", "api") else None))
     with pytest.raises(ValueError, match="not published"):
         release.publish(candidate[0])
     assert not (release.ROOT / "build/docs-release/release.json").exists()
