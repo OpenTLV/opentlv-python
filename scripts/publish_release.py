@@ -9,13 +9,13 @@ import re
 
 from build_support import ROOT, api, digest, read, require, run, write
 from ci_contract import REPOSITORY, definition_hashes
-from release import NOTES, preflight
+from release import NOTES, preflight, requested_tag
 
 WORKFLOW = ".github/workflows/python-release.yml"
 
 
-def verify(directory):
-    current, package, pinned = preflight()
+def verify(directory, tag):
+    current, package, pinned = preflight(tag)
     require(os.environ.get("GITHUB_WORKFLOW_REF") == REPOSITORY + "/" + WORKFLOW + "@refs/heads/main",
             "Release publication requires the canonical workflow")
     require(os.environ.get("PUBLISH_RELEASE") == "true" and
@@ -25,7 +25,8 @@ def verify(directory):
             "Python releases require a stable package version")
     manifest = read(directory / "manifest.json")
     require(manifest.get("schema") == 1 and manifest.get("kind") == "python-release-candidate"
-            and manifest.get("publication_enabled") is False and manifest.get("identity") == current
+            and manifest.get("publication_enabled") is False and manifest.get("tag") == tag
+            and manifest.get("identity") == current
             and manifest.get("package") == package and manifest.get("core_lock") == pinned
             and manifest.get("definitions") == definition_hashes(), "Candidate identity differs from this release")
     files = {"manifest.json", f"opentlv-python-{package['version']}.zip"}
@@ -66,9 +67,8 @@ def verify_published(released, directory, tag, commit, draft):
     require(api(f"repos/{REPOSITORY}/commits/{tag}").get("sha") == commit, "Release tag changed")
 
 
-def publish(directory):
-    current, package = verify(directory)
-    tag = "v" + package["version"]
+def publish(directory, tag):
+    current, package = verify(directory, tag)
     # A verified candidate alone is insufficient: create a tag and a real GitHub release.
     created = json.loads(run("gh", "api", f"repos/{REPOSITORY}/git/refs", "-X", "POST",
                              "-f", "ref=refs/tags/" + tag, "-f", "sha=" + current["commit"], capture=True))
@@ -91,4 +91,4 @@ def publish(directory):
 
 
 if __name__ == "__main__":
-    publish(ROOT / "build/release")
+    publish(ROOT / "build/release", requested_tag())

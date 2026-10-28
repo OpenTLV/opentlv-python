@@ -85,6 +85,20 @@ def test_release_prepares_attested_artifacts_and_only_opts_into_github_publicati
             assert "contents: write" not in text
 
 
+def test_release_passes_the_requested_tag_to_every_release_step():
+    release = workflow("python-release.yml")
+    assert release["on"]["workflow_dispatch"]["inputs"]["tag"]["required"] == "true"
+    assert release["on"]["workflow_dispatch"]["inputs"]["tag"]["type"] == "string"
+    steps = [step for job in release["jobs"].values() for step in job.get("steps", [])
+             if "scripts/release.py" in step.get("run", "") or "scripts/publish_release.py" in step.get("run", "")]
+    assert {name for step in steps for name in ("preflight", "assemble", "publish_release")
+            if name in step["run"]} == {"preflight", "assemble", "publish_release"}
+    for step in steps:
+        # The input reaches scripts only through the environment, never as shell text.
+        assert step["env"]["RELEASE_TAG"] == "${{ inputs.tag }}"
+        assert "inputs.tag" not in step["run"]
+
+
 def test_frozen_migration_inventory_and_existing_suite_are_unchanged():
     import hashlib
     inventory = read(ROOT / "docs/migration/source-inventory.json")

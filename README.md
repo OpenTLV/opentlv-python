@@ -115,9 +115,11 @@ See [quality gates and local commands](docs/quality-gates.md) and
 CI retains the tested wheels and source distributions alongside their checksums
 and build records. The manual [release preparation](docs/releases.md) runs
 verified-Core Full CI and assembles an attested candidate with a manifest and
-`SHA256SUMS`. Set `publish_release: true` to create the version tag and GitHub
-Release with the versioned [release notes](docs/release-notes.md) after
-verification and automatically notify the documentation portal. The default
+`SHA256SUMS` for the requested `tag` input, such as `v0.1.0`, which must match
+the package version, changelog and release notes. Set `publish_release: true`
+to create that tag and the GitHub Release with the versioned
+[release notes](docs/release-notes.md) after verification and automatically
+notify the documentation portal. The default
 remains candidate-only; PyPI publication is disabled. Release history is in the
 [changelog](CHANGELOG.md).
 
