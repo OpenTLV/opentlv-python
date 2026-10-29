@@ -11,7 +11,7 @@ separate `opentlv-core` package. Each wheel is a `cp311-abi3` wheel for
 CPython 3.11 and newer, tagged `manylinux_2_28_x86_64` (Linux x86-64),
 `macosx_11_0_arm64` (macOS arm64) or `win_amd64` (Windows x64). Core is linked
 statically, and the extension depends only on the C runtime and Python.
-PyPI publication is not enabled yet; install from source.
+It is not on PyPI yet; install from source.
 
 ## Install from source
 
@@ -129,7 +129,9 @@ the package version, changelog and release notes. Set `publish_release: true`
 to create that tag and the GitHub Release with the versioned
 [release notes](https://github.com/OpenTLV/opentlv-python/blob/main/docs/release-notes.md) after verification and automatically
 notify the documentation portal. The default
-remains candidate-only; PyPI publication is disabled. Release history is in the
+remains candidate-only. The `pypi` input uploads the same verified files to
+TestPyPI or, after the GitHub Release, to PyPI through Trusted Publishing in a
+protected environment, without stored tokens. Release history is in the
 [changelog](https://github.com/OpenTLV/opentlv-python/blob/main/CHANGELOG.md).
 
 ## License

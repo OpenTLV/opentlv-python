@@ -3,6 +3,7 @@
 """Protect trigger, ownership and required-check contracts during CI maintenance."""
 
 from pathlib import Path
+import re
 import sys
 
 import yaml
@@ -78,11 +79,48 @@ def test_release_prepares_attested_artifacts_and_only_opts_into_github_publicati
     assert release["jobs"]["publish"]["permissions"]["contents"] == "write"
     for path in (ROOT / ".github/workflows").glob("*.yml"):
         text = path.read_text()
-        assert "pypa/gh-action-pypi-publish" not in text
         assert "twine upload" not in text
         assert "gh release create" not in text
         if path.name != "python-release.yml":
             assert "contents: write" not in text
+            assert "pypa/gh-action-pypi-publish" not in text
+            assert "id-token: write" not in text
+
+
+def test_package_index_upload_uses_only_protected_trusted_publishing():
+    release = workflow("python-release.yml")
+    index = release["on"]["workflow_dispatch"]["inputs"]["pypi"]
+    assert index["type"] == "choice" and index["options"] == ["none", "testpypi", "pypi"]
+    assert index["default"] == "none"
+    jobs = release["jobs"]
+    # Only the attestation step and the protected upload job may request an OIDC token.
+    assert {name for name, job in jobs.items() if job.get("permissions", {}).get("id-token") == "write"} == {
+        "assemble", "pypi"}
+    job = jobs["pypi"]
+    assert job["environment"]["name"] == "${{ inputs.pypi }}"
+    assert job["permissions"] == {"contents": "read", "actions": "read", "attestations": "read",
+                                  "id-token": "write"}
+    assert set(job["needs"]) == {"full", "assemble", "publish"}
+    condition = " ".join(job["if"].split())
+    assert "inputs.pypi != 'none'" in condition and "needs.full.result == 'success'" in condition
+    assert ("(needs.publish.result == 'success' || (inputs.pypi == 'testpypi' && "
+            "needs.publish.result == 'skipped'))") in condition
+    steps = job["steps"]
+    uploads = [step for step in steps if step.get("uses", "").startswith("pypa/gh-action-pypi-publish@")]
+    assert len(uploads) == 1
+    upload = uploads[0]
+    # Pinned to a commit, never a token, never skipping or replacing existing files.
+    assert re.fullmatch(r"pypa/gh-action-pypi-publish@[0-9a-f]{40}", upload["uses"])
+    assert set(upload["with"]) == {"repository-url", "packages-dir", "attestations", "skip-existing"}
+    assert upload["with"]["attestations"] == "true" and upload["with"]["skip-existing"] == "false"
+    assert upload["with"]["packages-dir"] == "build/pypi/upload"
+    order = [step.get("run", step.get("uses", "")) for step in steps]
+    assert order.index("python -B scripts/publish_pypi.py prepare") < order.index(upload["uses"]) < order.index(
+        "python -B scripts/publish_pypi.py confirm")
+    text = (ROOT / ".github/workflows/python-release.yml").read_text()
+    assert "secrets." not in text and "password" not in text
+    preflight = next(step for step in jobs["preflight"]["steps"] if "release.py preflight" in step.get("run", ""))
+    assert preflight["env"]["PYPI_TARGET"] == "${{ inputs.pypi }}"
 
 
 def test_release_passes_the_requested_tag_to_every_release_step():

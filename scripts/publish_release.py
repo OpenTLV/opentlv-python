@@ -23,6 +23,15 @@ def verify(directory, tag):
             "GitHub publication requires explicit opt-in and successful Full/assembly jobs")
     require(re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", package["version"]),
             "Python releases require a stable package version")
+    verify_candidate(directory, tag, current, package, pinned)
+    return current, package
+
+
+def verify_candidate(directory, tag, current, package, pinned, latest_attempt=None):
+    """Authenticate the attested candidate of the `current` run attempt before any remote write.
+
+    `latest_attempt` is the run's attempt now executing, when that is a later re-run of failed jobs.
+    """
     manifest = read(directory / "manifest.json")
     require(manifest.get("schema") == 1 and manifest.get("kind") == "python-release-candidate"
             and manifest.get("publication_enabled") is False and manifest.get("tag") == tag
@@ -42,10 +51,10 @@ def verify(directory, tag):
     require(producer.get("status") == "in_progress" and producer.get("conclusion") is None
             and producer.get("event") == "workflow_dispatch" and producer.get("head_branch") == "main"
             and producer.get("head_sha") == current["commit"] and producer.get("path") == WORKFLOW
-            and str(producer.get("run_attempt")) == current["run_attempt"]
+            and str(producer.get("run_attempt")) == (latest_attempt or current["run_attempt"])
             and producer.get("head_repository", {}).get("full_name") == REPOSITORY,
             "Release producer is no longer the current trusted attempt")
-    return current, package
+    return manifest
 
 
 def verify_published(released, directory, tag, commit, draft):

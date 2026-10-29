@@ -5,7 +5,9 @@ Every dispatch names the release with the required `tag` input, for example
 `v0.1.0`. By default it produces an attested candidate for that tag. The
 optional `publish_release` input also creates exactly that tag and a GitHub
 Release after verification.
-No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
+The optional `pypi` input uploads the verified upload set to TestPyPI or PyPI
+through [Trusted Publishing](#pypi-trusted-publishing); no index credentials are
+stored.
 
 ## Prepare a candidate
 
@@ -43,8 +45,9 @@ No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
    baseline and Core lock to the exact run. All three top-level files receive
    GitHub build-provenance attestations before artifact upload.
 
-Rerun all jobs when retrying. Earlier attempts' packages or quality reports are
-rejected. Candidate files retain their tested bytes; assembly does not rebuild
+Rerun all jobs when retrying a candidate or GitHub publication. Earlier attempts'
+packages or quality reports are rejected; only a package-index upload retries
+with **Re-run failed jobs** (see [PyPI Trusted Publishing](#pypi-trusted-publishing)). Candidate files retain their tested bytes; assembly does not rebuild
 them. Builds are not bit-for-bit reproducible: the five Python versions of one
 platform produce the same `cp311-abi3` wheel filename with different bytes, and
 every configuration builds its own sdist. They therefore remain in separate
@@ -72,7 +75,7 @@ tag at the dispatch commit
 and uploads those files to a draft GitHub Release whose text is
 `docs/release-notes.md`. Before and after publishing the draft, it checks the
 tag commit, the release text and every uploaded asset's name, size and SHA-256
-digest. It never uploads packages to PyPI.
+digest. It does not upload packages; the separate `pypi` job does.
 
 Only after GitHub confirms a published release does the workflow upload
 `component-release-<attempt>` containing `release.json`. The separate
@@ -101,27 +104,77 @@ do not fabricate one from an old preparation artifact.
 Local tests mock GitHub publication and dispatch. Hosted release, receipt,
 Docs publication and resulting URLs still require end-to-end verification.
 
-## Future PyPI publication (separate approval and issue)
+## PyPI Trusted Publishing
 
-Only the `opentlv` distribution is published; `opentlv-core` is not. Its wheels
-already carry portable platform tags, pass `twine check --strict` and contain
-both the native module and the public package (see
-[portable wheels](development/python.md#portable-wheels)). Publication still needs:
+Only the `opentlv` distribution is published; `opentlv-core` is not. The
+`pypi` dispatch input selects the index:
 
-1. Confirmed ownership of the `opentlv` name on TestPyPI and PyPI (#47).
-2. Installation tests of the selected `dist/` bytes on every supported host, not
-   only of each configuration's own build (#50). Validate a clean install from a
-   directory containing only those files with `pip --no-index --find-links`.
-3. Reviewed TestPyPI and PyPI
-   [Trusted Publishers](https://docs.pypi.org/trusted-publishers/) for `opentlv`
-   and a protected publishing environment (#49). This is not configured by
-   migration or by the candidate workflow.
-4. After explicit publishing approval, upload exactly the `dist/` files to
-   TestPyPI, then to PyPI through the separately implemented publisher (#51,
-   #52). Verify a fresh `pip install opentlv` and import, and record the release
-   tag, file hashes and provenance.
+| `pypi` | Effect |
+| --- | --- |
+| `none` (default) | No package-index upload. |
+| `testpypi` | Rehearsal on TestPyPI. Runs after assembly; with `publish_release: false` the tag must still be unused. |
+| `pypi` | Production. Requires `publish_release: true`: preflight rejects the dispatch otherwise, and the job runs only after this run has published the tag and GitHub Release. |
+
+The `Publish verified Python packages to <index>` job runs in the GitHub
+environment of the same name and is the only job with `id-token: write` besides
+the provenance attestation in assembly. PyPI accepts its OIDC token only for this
+repository, workflow and environment, so no API token exists to leak, and pull
+requests, forks and other workflows cannot publish. Before any upload,
+`scripts/publish_pypi.py prepare` checks:
+
+- a manual dispatch of the canonical `python-release.yml` from `main` on the
+  official clean checkout, the requested tag against the package version,
+  release notes and closed changelog, and the locked attested Core;
+- successful Full and assembly jobs, and for PyPI a successful publisher job
+  whose release has the tag at this commit, the release notes and exactly the
+  candidate's assets;
+- the candidate manifest, `SHA256SUMS`, GitHub attestations and the producing
+  run, as for the GitHub publisher: the candidate must come from this run and
+  its attempt, or an earlier attempt when only failed jobs were re-run;
+- each file of the candidate's `dist/` upload set against the manifest, the
+  tested configuration's bytes and record, and the package contract: one wheel
+  per declared platform tag and one sdist.
+
+The pinned `pypa/gh-action-pypi-publish` then uploads those files with PEP 740
+attestations, never with `skip-existing`. `confirm` waits until the index lists
+exactly the upload set with the same SHA-256 digests and uploads a receipt,
+`python-package-index-<index>-<attempt>`, with the plan.
+
+Index files are immutable, so `prepare` never replaces one: it fails when the
+index lists a file for this version that is not in the upload set or has other
+bytes, and otherwise uploads only the files still missing. To retry a failed
+upload, use **Re-run failed jobs** on the same run. The job then takes this
+run's newest attested candidate, from the attempt that assembled it, so it
+uploads the same bytes and can complete an interrupted upload; the candidate's
+producer must still be this run, and the environment approval is requested
+again. Re-running all jobs rebuilds new bytes, and its preflight rejects a tag
+that already exists, so after a published GitHub Release, or once any file of a
+version is on the index, a different candidate needs a new patch version.
+
+### One-time configuration
+
+These settings live outside this repository and are made by a maintainer:
+
+1. In the repository settings, create the environments `testpypi` and `pypi`.
+   Limit deployment branches to `main`, require a reviewer for `pypi` (and
+   preferably for `testpypi`), and add no secrets or variables. The `pypi` job
+   then waits for approval after the GitHub Release exists.
+2. On [PyPI](https://pypi.org/manage/account/publishing/), add a pending
+   GitHub publisher for the project `opentlv`: owner `OpenTLV`, repository
+   `opentlv-python`, workflow `python-release.yml`, environment `pypi`. On
+   [TestPyPI](https://test.pypi.org/manage/account/publishing/), which has
+   separate accounts, add the same publisher with environment `testpypi`. A
+   pending publisher does not reserve the name; the first successful upload
+   creates the project under the registering account. Ownership and a later
+   transfer to the `opentlv` organization are tracked in #47.
+3. Create no PyPI API tokens for this project, and remove any that exist.
+
+Still open before the first upload: installation tests of the selected `dist/`
+bytes on every supported host (#50), the TestPyPI rehearsal and handoff (#51)
+and the first public release (#52).
 
 Build-tool dependencies currently have bounded/minimum requirements rather than
 a complete environment lock. Exact Core source selection and retained package
 checksums provide traceability, not a claim of bit-for-bit reproducibility across
-different toolchains or build times. No PyPI publication has been validated here.
+different toolchains or build times. Local tests mock the index and GitHub; no
+hosted TestPyPI or PyPI upload has been validated here.

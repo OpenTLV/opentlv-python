@@ -9,9 +9,14 @@ on:
         required: true
         type: string
       publish_release:
-        description: Create the requested tag and GitHub release after Full verification (no PyPI upload)
+        description: Create the requested tag and GitHub release after Full verification
         type: boolean
         default: false
+      pypi:
+        description: Upload the verified packages to testpypi, or to pypi after the GitHub release of this run
+        type: choice
+        options: [none, testpypi, pypi]
+        default: none
 permissions:
   contents: read
 concurrency:
@@ -30,6 +35,8 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          PYPI_TARGET: ${{ inputs.pypi }}
         run: python -B scripts/release.py preflight
   full:
     needs: preflight
@@ -110,4 +117,64 @@ jobs:
         with:
           name: component-release-${{ github.run_attempt }}
           path: build/docs-release/release.json
+          if-no-files-found: error
+  pypi:
+    name: Publish verified Python packages to ${{ inputs.pypi }}
+    needs: [full, assemble, publish]
+    # PyPI follows the GitHub release of this run; a TestPyPI rehearsal may run without it.
+    if: >-
+      !cancelled() && inputs.pypi != 'none' &&
+      needs.full.result == 'success' && needs.assemble.result == 'success' &&
+      (needs.publish.result == 'success' || (inputs.pypi == 'testpypi' && needs.publish.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    # Protected environments limit deployment to main and require approval; PyPI trusts only this
+    # repository, workflow and environment through OIDC, so no index token is stored.
+    environment:
+      name: ${{ inputs.pypi }}
+      url: ${{ inputs.pypi == 'pypi' && 'https://pypi.org/project/opentlv/' || 'https://test.pypi.org/project/opentlv/' }}
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      # Re-running only failed jobs keeps the candidate of the attempt that assembled it.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-release-candidate-*
+          path: build/candidates
+      - name: Verify the candidate, release state and package index
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          PYPI_TARGET: ${{ inputs.pypi }}
+          FULL_RESULT: ${{ needs.full.result }}
+          ASSEMBLE_RESULT: ${{ needs.assemble.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+        run: python -B scripts/publish_pypi.py prepare
+      - name: Upload through Trusted Publishing
+        if: steps.prepare.outputs.upload == 'true'
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          repository-url: ${{ steps.prepare.outputs.repository_url }}
+          packages-dir: build/pypi/upload
+          attestations: true
+          skip-existing: false
+      - name: Confirm the published files
+        env:
+          PYPI_TARGET: ${{ inputs.pypi }}
+        run: python -B scripts/publish_pypi.py confirm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-package-index-${{ inputs.pypi }}-${{ github.run_attempt }}
+          path: |
+            build/pypi/plan.json
+            build/pypi/receipt.json
           if-no-files-found: error
