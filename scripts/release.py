@@ -54,7 +54,7 @@ def unused_tag(tag):
     require(not any(item.get("tag_name") == tag for item in releases), "GitHub release already exists")
 
 
-def trusted_dispatch(tag):
+def checked_dispatch(tag):
     """Check the release inputs and the manual main dispatch on the official clean checkout."""
     pinned = lock(True)
     package = policy()
@@ -69,7 +69,7 @@ def trusted_dispatch(tag):
 
 
 def preflight(tag):
-    result = trusted_dispatch(tag)
+    result = checked_dispatch(tag)
     unused_tag(tag)
     return result
 

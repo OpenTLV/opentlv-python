@@ -33,7 +33,7 @@ def candidate(tmp_path, monkeypatch):
     shutil.move(assembled, output)
     manifest = read(output / "manifest.json")
     calls = {"unused_tag": 0, "verify_published": 0, "producer": []}
-    monkeypatch.setattr(pypi, "trusted_dispatch", lambda tag: (IDENTITY, packages.policy(), manifest["core_lock"]))
+    monkeypatch.setattr(pypi, "checked_dispatch", lambda tag: (IDENTITY, packages.policy(), manifest["core_lock"]))
     # verify_candidate's manifest, checksum, attestation and producer checks are covered with the GitHub publisher.
     def verify_candidate(directory, tag, producer, package, pinned, latest):
         calls["producer"].append((directory.name, producer["run_attempt"], latest))
@@ -225,7 +225,7 @@ def test_index_files_reads_the_version_json_and_treats_404_as_unpublished(monkey
 def test_rerun_of_failed_jobs_uploads_the_earlier_attempts_candidate(candidate, monkeypatch):
     output, _, _, calls, _ = candidate
     # Attempt 3 re-runs only the failed upload job; attempt 2's attested candidate is reused.
-    monkeypatch.setattr(pypi, "trusted_dispatch", lambda tag: (
+    monkeypatch.setattr(pypi, "checked_dispatch", lambda tag: (
         {**IDENTITY, "run_attempt": "3"}, packages.policy(), read(output / "manifest.json")["core_lock"]))
     pypi.prepare(output.parent, "v0.1.0", "testpypi")
     assert calls["producer"] == [("python-release-candidate-2", "2", "3")]
@@ -238,7 +238,7 @@ def test_newest_candidate_of_the_run_is_selected(candidate, monkeypatch):
     manifest = read(newer / "manifest.json")
     manifest["identity"]["run_attempt"] = "3"
     write(newer / "manifest.json", manifest)
-    monkeypatch.setattr(pypi, "trusted_dispatch", lambda tag: (
+    monkeypatch.setattr(pypi, "checked_dispatch", lambda tag: (
         {**IDENTITY, "run_attempt": "3"}, packages.policy(), manifest["core_lock"]))
     pypi.prepare(output.parent, "v0.1.0", "testpypi")
     assert calls["producer"] == [("python-release-candidate-3", "3", "3")]

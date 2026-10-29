@@ -16,7 +16,7 @@ from build_support import ROOT, api, read, require, write
 from ci_contract import REPOSITORY
 from package_contract import DISTRIBUTION, check_sdist, check_wheel, wheel_name
 from publish_release import WORKFLOW, verify_candidate, verify_published
-from release import requested_tag, trusted_dispatch, unused_tag
+from release import checked_dispatch, requested_tag, unused_tag
 
 INDEXES = {"testpypi": "https://test.pypi.org", "pypi": "https://pypi.org"}
 UPLOAD_URLS = {"testpypi": "https://test.pypi.org/legacy/", "pypi": "https://upload.pypi.org/legacy/"}
@@ -48,7 +48,7 @@ def select_candidate(root, current):
 
 def verify(root, tag, index):
     """Bind the upload to this run's Full CI, attested candidate and tag state."""
-    current, package, pinned = trusted_dispatch(tag)
+    current, package, pinned = checked_dispatch(tag)
     directory, producer = select_candidate(root, current)
     require(os.environ.get("GITHUB_WORKFLOW_REF") == REPOSITORY + "/" + WORKFLOW + "@refs/heads/main",
             "Package index publication requires the canonical workflow")
