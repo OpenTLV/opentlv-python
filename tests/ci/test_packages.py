@@ -17,196 +17,241 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from build_support import ROOT, digest, read, write
 import ci_contract
 import package_contract as packages
+from package_contract import DISTRIBUTION
 import release
 from test_gate import CHECKS, IDENTITY, null_lock, records
 
+PREFIX = DISTRIBUTION + "-" + packages.policy()["version"]
 
-def metadata(name, value):
-    result = (f'Metadata-Version: 2.4\nName: {name}\nVersion: {value["version"]}\n'
-              f'License-Expression: MIT\nLicense-File: LICENSE\n'
-              f'Requires-Python: {value["requires_python"]}\n')
-    if name == "opentlv":
-        result += f'Requires-Dist: opentlv-core=={value["version"]}\n'
-    return result.encode()
+
+def metadata(value):
+    return (f'Metadata-Version: 2.4\nName: {DISTRIBUTION}\nVersion: {value["version"]}\n'
+            f'License-Expression: MIT\nLicense-File: LICENSE\n'
+            f'Requires-Python: {value["requires_python"]}\n').encode()
+
+
+def native(system):
+    return "_opentlv.pyd" if system == "Windows" else "_opentlv.abi3.so"
+
+
+def write_wheel(path, contents):
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in contents.items():
+            archive.writestr(name, content)
+
+
+def wheel_contents(path):
+    with zipfile.ZipFile(path) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def write_sdist(path, contents):
+    with tarfile.open(path, "w:gz") as archive:
+        for name, content in contents.items():
+            entry = tarfile.TarInfo(name)
+            entry.size = len(content)
+            archive.addfile(entry, io.BytesIO(content))
+
+
+def sdist_contents(path):
+    with tarfile.open(path) as archive:
+        return {member.name: archive.extractfile(member).read()
+                for member in archive.getmembers() if member.isfile()}
 
 
 def artifacts(work, record):
     value = packages.policy()
-    for name in packages.DISTRIBUTIONS:
-        prefix = name.replace("-", "_") + "-" + value["version"]
-        native = name == "opentlv-core"
-        tag = "cp311-abi3-linux_x86_64" if native else "py3-none-any"
-        path = work / "wheels" / (prefix + "-" + tag + ".whl")
+    system = record["configuration"]["system"]
+    path = work / "wheels" / packages.wheel_name(value, system)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    info = PREFIX + ".dist-info/"
+    contents = {info + "METADATA": metadata(value),
+                info + "WHEEL": (f'Wheel-Version: 1.0\nTag: cp311-abi3-{value["wheel_platforms"][system]}\n'
+                                 'Root-Is-Purelib: false\n').encode(),
+                info + "licenses/LICENSE": (ROOT / "LICENSE").read_bytes(),
+                info + "licenses/OpenTLV/LICENSE": b"MIT License\n",
+                native(system): b"fixture",
+                "_opentlv_core_dependency.json": json.dumps(record["core"]).encode()}
+    for source in (ROOT / "src/opentlv").glob("*.py"):
+        contents["opentlv/" + source.name] = source.read_bytes()
+    write_wheel(path, contents)
+    record["wheels"] = {DISTRIBUTION: digest(path)}
+    if record["tier"] == "full":
+        path = work / "sdists" / (PREFIX + ".tar.gz")
         path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(path, "w") as archive:
-            info = prefix + ".dist-info/"
-            archive.writestr(info + "METADATA", metadata(name, value))
-            archive.writestr(info + "WHEEL", f'Wheel-Version: 1.0\nTag: {tag}\nRoot-Is-Purelib: {str(not native).lower()}\n')
-            archive.writestr(info + "licenses/LICENSE", (ROOT / "LICENSE").read_bytes())
-            if native:
-                archive.writestr(info + "licenses/OpenTLV/LICENSE", b"MIT License\n")
-                archive.writestr("_opentlv.abi3.so", b"fixture")
-                archive.writestr("_opentlv_core_dependency.json", json.dumps(record["core"]))
-            else:
-                for source in (ROOT / "src/opentlv").glob("*.py"):
-                    archive.writestr("opentlv/" + source.name, source.read_bytes())
-        record["wheels"][name] = digest(path)
-        if record["tier"] == "full":
-            path = work / "sdists" / (prefix + ".tar.gz")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            project = packages.PROJECTS[packages.DISTRIBUTIONS.index(name)]
-            contents = {"PKG-INFO": metadata(name, value), "pyproject.toml": (ROOT / project).read_bytes()}
-            for relative in packages.sdist_inputs(name):
-                contents[relative] = (ROOT / Path(project).parent / relative).read_bytes()
-            if native:
-                for relative in ("cmake/python-package.json", "cmake/core-artifact.json",
-                                 "docs/migration/source-inventory.json"):
-                    contents[relative] = (ROOT / relative).read_bytes()
-            with tarfile.open(path, "w:gz") as archive:
-                for relative, content in contents.items():
-                    entry = tarfile.TarInfo(prefix + "/" + relative)
-                    entry.size = len(content)
-                    archive.addfile(entry, io.BytesIO(content))
-    record["artifacts"] = packages.inspect_artifacts(work, record["tier"], record["core"], value)
+        contents = {PREFIX + "/PKG-INFO": metadata(value)}
+        for relative in packages.sdist_inputs():
+            contents[PREFIX + "/" + relative] = (ROOT / relative).read_bytes()
+        write_sdist(path, contents)
+    record["artifacts"] = packages.inspect_artifacts(work, record["tier"], record["core"], value, system)
 
 
 @pytest.mark.parametrize("tier", ["pr", "main", "full"])
 def test_distribution_roundtrip(tmp_path, tier):
-    record = records(tier)[0]
-    artifacts(tmp_path, record)
-    packages.validate_bundle(tmp_path, record, packages.policy())
-    assert len(record["artifacts"]) == (4 if tier == "full" else 2)
+    for record in records(tier):
+        work = tmp_path / record["configuration"]["id"]
+        artifacts(work, record)
+        packages.validate_bundle(work, record, packages.policy())
+        assert len(record["artifacts"]) == (2 if tier == "full" else 1)
+        assert next(iter(record["artifacts"])) == "wheels/" + packages.wheel_name(
+            packages.policy(), record["configuration"]["system"])
 
 
-@pytest.mark.parametrize("name", packages.DISTRIBUTIONS)
-@pytest.mark.parametrize("mutation", ["missing-source", "obsolete-layout"])
-def test_sdist_rejects_incomplete_or_obsolete_layout(tmp_path, name, mutation):
+@pytest.mark.parametrize("mutation,message", [
+    ("native/common/path_query.h", "build inputs"), ("src/opentlv/reader.py", "build inputs"),
+    ("bindings/obsolete.py", "obsolete bindings"), ("src/pyproject.toml", "second build entry point")])
+def test_sdist_rejects_incomplete_or_obsolete_layout(tmp_path, mutation, message):
     record = records("full")[0]
     artifacts(tmp_path, record)
-    path = tmp_path / "sdists" / (name.replace("-", "_") + "-0.1.0.tar.gz")
-    with tarfile.open(path) as archive:
-        contents = {member.name: archive.extractfile(member).read()
-                    for member in archive.getmembers() if member.isfile()}
-    prefix = name.replace("-", "_") + "-0.1.0/"
-    if mutation == "missing-source":
-        del contents[prefix + ("native/common/path_query.h" if name == "opentlv-core"
-                               else "opentlv/reader.py")]
+    path = tmp_path / "sdists" / (PREFIX + ".tar.gz")
+    contents = sdist_contents(path)
+    if PREFIX + "/" + mutation in contents:
+        del contents[PREFIX + "/" + mutation]
     else:
-        contents[prefix + "bindings/obsolete.py"] = b"# stale source\n"
-    with tarfile.open(path, "w:gz") as archive:
-        for relative, content in contents.items():
-            entry = tarfile.TarInfo(relative)
-            entry.size = len(content)
-            archive.addfile(entry, io.BytesIO(content))
-    with pytest.raises(ValueError, match="build inputs|obsolete bindings"):
-        packages.check_sdist(path, name, packages.policy())
+        contents[PREFIX + "/" + mutation] = b"# stale source\n"
+    write_sdist(path, contents)
+    with pytest.raises(ValueError, match=message):
+        packages.check_sdist(path, packages.policy())
 
 
-@pytest.mark.parametrize("mutation", ["missing-source", "test-payload"])
-def test_public_wheel_rejects_incomplete_or_test_payload(tmp_path, mutation):
+@pytest.mark.parametrize("mutation,message", [
+    ("missing-source", "source inventory"), ("test-payload", "source inventory"),
+    ("vendored-library", "source inventory"), ("missing-native", "native _opentlv"),
+    ("version-specific-native", "native _opentlv"), ("platform-abi3-native", "native _opentlv"),
+    ("core-identity", "Core identity")])
+def test_wheel_rejects_incomplete_or_foreign_payload(tmp_path, mutation, message):
     record = records()[0]
     artifacts(tmp_path, record)
-    path = next((tmp_path / "wheels").glob("opentlv-*.whl"))
-    with zipfile.ZipFile(path) as archive:
-        contents = {name: archive.read(name) for name in archive.namelist()}
+    path = next((tmp_path / "wheels").glob("*.whl"))
+    contents = wheel_contents(path)
     if mutation == "missing-source":
         del contents["opentlv/reader.py"]
-    else:
+    elif mutation == "test-payload":
         contents["opentlv/tests/test_reader.py"] = b"# test\n"
-    with zipfile.ZipFile(path, "w") as archive:
-        for name, content in contents.items():
-            archive.writestr(name, content)
-    with pytest.raises(ValueError, match="source inventory"):
-        packages.check_wheel(path, "opentlv", packages.policy(), record["core"])
+    elif mutation == "vendored-library":
+        # auditwheel grafts external libraries here; Core must stay statically linked.
+        contents["opentlv.libs/libopentlv-0a1b2c3d.so"] = b"library"
+    elif mutation == "core-identity":
+        contents["_opentlv_core_dependency.json"] = json.dumps({**record["core"], "commit": "f" * 40}).encode()
+    else:
+        module = contents.pop("_opentlv.abi3.so")
+        if mutation == "version-specific-native":
+            contents["_opentlv.cpython-311-x86_64-linux-gnu.so"] = module
+        elif mutation == "platform-abi3-native":
+            # CPython 3.15's default stable-ABI suffix, which 3.11-3.14 cannot import.
+            contents["_opentlv.abi3-x86_64-linux-gnu.so"] = module
+    write_wheel(path, contents)
+    with pytest.raises(ValueError, match=message):
+        packages.check_wheel(path, packages.policy(), record["core"], "Linux")
 
 
-@pytest.mark.parametrize("name,entry", [
-    ("opentlv", "licenses/LICENSE"),
-    ("opentlv-core", "licenses/LICENSE"),
-    ("opentlv-core", "licenses/OpenTLV/LICENSE"),
-])
-@pytest.mark.parametrize("mutation", ["missing", "changed"])
-def test_wheel_requires_license_texts(tmp_path, name, entry, mutation):
+def test_wheel_accepts_directory_entries_from_repair(tmp_path):
     record = records()[0]
     artifacts(tmp_path, record)
-    path = next((tmp_path / "wheels").glob(name.replace("-", "_") + "-*.whl"))
-    entry = name.replace("-", "_") + "-0.1.0.dist-info/" + entry
-    with zipfile.ZipFile(path) as archive:
-        contents = {item: archive.read(item) for item in archive.namelist()}
+    path = next((tmp_path / "wheels").glob("*.whl"))
+    contents = wheel_contents(path)
+    for directory in ("opentlv/", PREFIX + ".dist-info/", PREFIX + ".dist-info/licenses/OpenTLV/"):
+        contents[directory] = b""
+    write_wheel(path, contents)
+    packages.check_wheel(path, packages.policy(), record["core"], "Linux")
+
+
+@pytest.mark.parametrize("mutation,message", [
+    ("filename", "filename"), ("tag", "tag differs"), ("purelib", "installation scheme")])
+def test_wheel_rejects_unportable_tag(tmp_path, mutation, message):
+    record = records()[0]
+    artifacts(tmp_path, record)
+    path = next((tmp_path / "wheels").glob("*.whl"))
+    info = PREFIX + ".dist-info/WHEEL"
+    contents = wheel_contents(path)
+    if mutation == "filename":
+        # A plain linux tag is what pip builds before the manylinux repair.
+        path = path.rename(path.with_name(PREFIX + "-cp311-abi3-linux_x86_64.whl"))
+    elif mutation == "tag":
+        contents[info] = contents[info].replace(b"manylinux_2_28_x86_64", b"linux_x86_64")
+    else:
+        contents[info] = contents[info].replace(b"Root-Is-Purelib: false", b"Root-Is-Purelib: true")
+    write_wheel(path, contents)
+    with pytest.raises(ValueError, match=message):
+        packages.check_wheel(path, packages.policy(), record["core"], "Linux")
+
+
+@pytest.mark.parametrize("entry", ["licenses/LICENSE", "licenses/OpenTLV/LICENSE"])
+@pytest.mark.parametrize("mutation", ["missing", "changed"])
+def test_wheel_requires_license_texts(tmp_path, entry, mutation):
+    record = records()[0]
+    artifacts(tmp_path, record)
+    path = next((tmp_path / "wheels").glob("*.whl"))
+    entry = PREFIX + ".dist-info/" + entry
+    contents = wheel_contents(path)
     if mutation == "missing":
         del contents[entry]
     else:
         # An empty Core license, or a project license that differs from LICENSE.
         contents[entry] = b"" if entry.endswith("OpenTLV/LICENSE") else b"Copyright (c) 2026 OpenTLV\n"
-    with zipfile.ZipFile(path, "w") as archive:
-        for item, content in contents.items():
-            archive.writestr(item, content)
+    write_wheel(path, contents)
     with pytest.raises(ValueError, match="license"):
-        packages.check_wheel(path, name, packages.policy(), record["core"])
+        packages.check_wheel(path, packages.policy(), record["core"], "Linux")
 
 
-@pytest.mark.parametrize("name", packages.DISTRIBUTIONS)
-def test_sdist_requires_license_text(tmp_path, name):
+def test_sdist_requires_license_text(tmp_path):
     record = records("full")[0]
     artifacts(tmp_path, record)
-    path = tmp_path / "sdists" / (name.replace("-", "_") + "-0.1.0.tar.gz")
-    with tarfile.open(path) as archive:
-        contents = {member.name: archive.extractfile(member).read()
-                    for member in archive.getmembers() if member.isfile()}
-    contents[name.replace("-", "_") + "-0.1.0/LICENSE"] = b"Copyright (c) 2026 OpenTLV\n"
-    with tarfile.open(path, "w:gz") as archive:
-        for relative, content in contents.items():
-            entry = tarfile.TarInfo(relative)
-            entry.size = len(content)
-            archive.addfile(entry, io.BytesIO(content))
+    path = tmp_path / "sdists" / (PREFIX + ".tar.gz")
+    contents = sdist_contents(path)
+    contents[PREFIX + "/LICENSE"] = b"Copyright (c) 2026 OpenTLV\n"
+    write_sdist(path, contents)
     with pytest.raises(ValueError, match="license"):
-        packages.check_sdist(path, name, packages.policy())
+        packages.check_sdist(path, packages.policy())
 
 
 @pytest.mark.parametrize("before,after", [
     (b"Version: 0.1.0", b"Version: 0.7.1"),
-    (b"Name: opentlv", b"Name: other"),
+    (b"Name: opentlv", b"Name: opentlv-core"),
     (b"Requires-Python: >=3.11", b"Requires-Python: >=3.12"),
-    (b"opentlv-core==0.1.0", b"opentlv-core"),
-    (b"opentlv-core==0.1.0", b"opentlv-core>=0.1.0"),
-    (b"opentlv-core==0.1.0", b"opentlv-core==0.7.1"),
+    (b"Requires-Python: >=3.11\n", b"Requires-Python: >=3.11\nRequires-Dist: opentlv-core==0.1.0\n"),
     (b"License-Expression: MIT", b"License-Expression: Apache-2.0"),
     (b"License-File: LICENSE\n", b""),
 ])
 def test_metadata_rejects_incompatible_packages(before, after):
     value = packages.policy()
     with pytest.raises(ValueError):
-        packages.check_metadata(metadata("opentlv", value).replace(before, after), "opentlv", value)
+        packages.check_metadata(metadata(value).replace(before, after), value)
 
 
-@pytest.mark.parametrize("mutation", ["version", "dependency", "core", "baseline",
-                                      "license", "license-files", "license-copy"])
+@pytest.mark.parametrize("mutation", ["version", "dependency", "core", "baseline", "license", "license-files",
+                                      "packages", "entry-point", "platform", "missing-platform"])
 def test_source_policy_drift(tmp_path, mutation):
-    for relative in (*packages.PROJECTS, "cmake/python-package.json", "cmake/core-artifact.json",
-                     "docs/migration/source-inventory.json", "LICENSE", "src/LICENSE"):
+    for relative in (packages.PROJECT, "cmake/python-package.json", "cmake/core-artifact.json",
+                     "cmake/ci-matrix.json", "docs/migration/source-inventory.json", "LICENSE"):
         destination = tmp_path / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / relative, destination)
-    if mutation in ("version", "dependency"):
-        path = tmp_path / packages.PROJECTS[1]
-        text = path.read_text()
-        text = text.replace('version = "0.1.0"', 'version = "0.2.0"') if mutation == "version" else text.replace("==0.1.0", "")
-        path.write_text(text)
-    elif mutation in ("license", "license-files"):
-        path = tmp_path / packages.PROJECTS[0]
-        text = path.read_text()
-        path.write_text(text.replace('license = "MIT"', 'license = "Apache-2.0"') if mutation == "license"
-                        else text.replace('license-files = ["LICENSE"]\n', ""))
-    elif mutation == "license-copy":
-        path = tmp_path / "src/LICENSE"
-        path.write_bytes(path.read_bytes().replace(b"Marek Cingel", b"OpenTLV"))
+    packages.policy(tmp_path)
+    project = tmp_path / packages.PROJECT
+    text = project.read_text()
+    if mutation in ("version", "dependency", "license", "license-files", "packages"):
+        project.write_text({
+            "version": text.replace('version = "0.1.0"', 'version = "0.2.0"'),
+            "dependency": text.replace('license-files = ["LICENSE"]\n',
+                                       'license-files = ["LICENSE"]\ndependencies = ["opentlv-core==0.1.0"]\n'),
+            "license": text.replace('license = "MIT"', 'license = "Apache-2.0"'),
+            "license-files": text.replace('license-files = ["LICENSE"]\n', ""),
+            "packages": text.replace('wheel.packages = ["src/opentlv"]', "wheel.packages = []")}[mutation])
+    elif mutation == "entry-point":
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src/pyproject.toml").write_text('[project]\nname = "opentlv"\n')
     else:
         path = tmp_path / ("cmake/core-artifact.json" if mutation == "core" else "cmake/python-package.json")
         data = read(path)
         if mutation == "core":
             data["version"] = "99.0.0"
-        else:
+        elif mutation == "baseline":
             data["migration"]["commit"] = "f" * 40
+        elif mutation == "platform":
+            data["wheel_platforms"]["Linux"] = "linux_x86_64"
+        else:
+            del data["wheel_platforms"]["Darwin"]
         write(path, data)
     with pytest.raises(ValueError):
         packages.policy(tmp_path)
@@ -216,19 +261,33 @@ def test_source_policy_drift(tmp_path, mutation):
 def test_bundle_rejects_tampering(tmp_path, mutation):
     record = records()[0]
     artifacts(tmp_path, record)
-    native = next((tmp_path / "wheels").glob("opentlv_core*.whl"))
+    wheel = next((tmp_path / "wheels").glob("*.whl"))
     if mutation == "digest":
-        native.write_bytes(native.read_bytes() + b"changed")
+        wheel.write_bytes(wheel.read_bytes() + b"changed")
     elif mutation == "core":
         record["core"]["commit"] = "f" * 40
     elif mutation == "missing":
-        native.unlink()
+        wheel.unlink()
     elif mutation == "extra":
         (tmp_path / "wheels/unexpected.whl").write_bytes(b"extra")
     else:
         record["artifacts"]["../outside.whl"] = record["artifacts"].pop(next(iter(record["artifacts"])))
     with pytest.raises(ValueError):
         packages.validate_bundle(tmp_path, record, packages.policy())
+
+
+@pytest.mark.parametrize("system,command", [
+    ("Linux", ["auditwheel", "repair", "--only-plat", "--plat", "manylinux_2_28_x86_64"]),
+    ("Darwin", ["delocate.cmd.delocate_wheel", "--require-archs", "arm64", "--require-target-macos-version", "11.0"]),
+    ("Windows", ["delvewheel", "repair"])])
+def test_portable_repair_targets_declared_platform(tmp_path, monkeypatch, system, command):
+    import ci
+    calls = []
+    monkeypatch.setattr(ci, "run", lambda *args, **kwargs: calls.append([str(item) for item in args]))
+    monkeypatch.setenv("MACOSX_DEPLOYMENT_TARGET", "11.0")
+    ci.portable(tmp_path / "raw.whl", tmp_path / "wheels", system, packages.policy()["wheel_platforms"][system])
+    assert calls == [[sys.executable, "-m", *command, "--wheel-dir", str(tmp_path / "wheels"),
+                      str(tmp_path / "raw.whl")]]
 
 
 def release_fixture(tmp_path, monkeypatch):
@@ -263,13 +322,37 @@ def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypat
     for line in (output / "SHA256SUMS").read_text().splitlines():
         sha, name = line.split("  ")
         assert sha == digest(output / name)
+    # One wheel per platform from its stable-ABI floor build, and one sdist.
+    value = packages.policy()
+    assert manifest["distributions"] == {
+        packages.wheel_name(value, "Linux"): {"source": "linux-3.11/wheels/" + packages.wheel_name(value, "Linux"),
+                                              "sha256": manifest["files"]["linux-3.11/wheels/"
+                                                                          + packages.wheel_name(value, "Linux")]},
+        packages.wheel_name(value, "Windows"): {
+            "source": "windows-3.11/wheels/" + packages.wheel_name(value, "Windows"),
+            "sha256": manifest["files"]["windows-3.11/wheels/" + packages.wheel_name(value, "Windows")]},
+        packages.wheel_name(value, "Darwin"): {
+            "source": "macos-3.11/wheels/" + packages.wheel_name(value, "Darwin"),
+            "sha256": manifest["files"]["macos-3.11/wheels/" + packages.wheel_name(value, "Darwin")]},
+        PREFIX + ".tar.gz": {"source": "linux-3.11/sdists/" + PREFIX + ".tar.gz",
+                             "sha256": manifest["files"]["linux-3.11/sdists/" + PREFIX + ".tar.gz"]}}
     import hashlib
     with zipfile.ZipFile(next(output.glob("*.zip"))) as archive:
         assert json.loads(archive.read("manifest.json")) == manifest
         for name, sha in manifest["files"].items():
             assert hashlib.sha256(archive.read(name)).hexdigest() == sha
+        assert sorted(name for name in archive.namelist() if name.startswith("dist/")) == sorted(
+            "dist/" + name for name in manifest["distributions"])
     with pytest.raises(ValueError, match="fresh"):
         release.assemble(evidence, quality, output, "v0.1.0")
+
+
+@pytest.mark.parametrize("missing", ["windows-3.11", "linux-3.11"])
+def test_upload_set_requires_every_platform_and_the_sdist(missing):
+    data = records("full")
+    assert len(release.select_distributions(data)) == 4
+    with pytest.raises(ValueError, match="Incomplete distribution upload set"):
+        release.select_distributions([record for record in data if record["configuration"]["id"] != missing])
 
 
 @pytest.mark.parametrize("mutation", ["attempt", "missing", "digest", "quality", "unverified"])

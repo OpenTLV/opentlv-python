@@ -7,43 +7,71 @@ Run these commands from the root of
 virtual environment. Core remains the source of truth for shared architecture
 and TLV semantics; this repository owns Python implementation and development.
 
-The repository contains two distributions with unchanged import names and API:
+The repository builds one distribution, `opentlv`, with unchanged import names
+and API. Its source modules stay separate:
 
-| Build path | Distribution | Import |
+| Source | Import | Installed at |
 | --- | --- | --- |
-| Repository root | `opentlv-core` | `_opentlv` |
-| `src` | `opentlv` | `opentlv` |
+| `native/` (CMake target `_opentlv`) | `_opentlv` | Wheel root, with `_opentlv_core_dependency.json` |
+| `src/opentlv/` | `opentlv` | `opentlv/` |
 
-Use Python 3.11+, a C99 compiler, Git and CMake 3.26+. The native build uses
-scikit-build-core and CPython's Limited API (`Py_LIMITED_API=0x030B0000`).
-The wheel is tagged `cp311-abi3`; Core is static and uses PIC for shared-module
-linking. Windows uses the dynamic MSVC runtime. Hatchling builds the public
-package. The Python implementation and native API are unchanged by #2.
+Use Python 3.11+, a C99 compiler, Git and CMake 3.26+. The root
+`pyproject.toml` is the only build entry point: scikit-build-core builds the
+native module with CPython's Limited API (`Py_LIMITED_API=0x030B0000`) and
+copies `src/opentlv` beside it (`wheel.packages`). Each wheel is tagged
+`cp311-abi3-<platform>`; Core is static and uses PIC for shared-module linking.
+Windows uses the dynamic MSVC runtime.
 
 ```sh
-python -m pip install . ./src
+python -m pip install .
 ```
 
-Native package metadata lives at the repository root so its sdist contains
-the CMake files, resolver, `native/src` sources and `native/common` adapters.
-The facade uses `src/opentlv`, with its separate distribution metadata in
-`src/pyproject.toml`. Tests live in `tests/python` and examples in `examples`,
-outside the installed package. Run examples from the repository root.
-Only the Python install component enters the wheel: no Core headers, archives,
-or build tools are installed as Python package payload. Both distributions
-declare `License-Expression: MIT` and carry `LICENSE` as their `License-File`;
-the facade's copy is `src/LICENSE`. Because Core is linked statically, the native
-wheel also carries Core's license as `.dist-info/licenses/OpenTLV/LICENSE`.
+The sdist contains the CMake files, resolver, `native/src` sources,
+`native/common` adapters and `src/opentlv`, so it rebuilds the complete package.
+Tests live in `tests/python` and examples in `examples`, outside the installed
+package. Run examples from the repository root. Only the Python install component
+and `src/opentlv` enter the wheel: no Core headers, archives, or build tools are
+installed as Python package payload. The distribution declares
+`License-Expression: MIT` and carries `LICENSE` as its `License-File`. Because
+Core is linked statically, the wheel also carries Core's license as
+`.dist-info/licenses/OpenTLV/LICENSE`. There is no `opentlv-core` distribution
+and no dependency on one.
 
-To build both wheels and test native sdist rebuilding:
+To build the sdist and rebuild the wheel from it:
 
 ```sh
 python -m pip install build pytest
 python -m build --sdist --outdir build/dist .
-python -m pip wheel --no-deps build/dist/opentlv_core-0.1.0.tar.gz -w build/wheels
-python -m build --sdist --outdir build/dist ./src
 python -m pip wheel --no-deps build/dist/opentlv-0.1.0.tar.gz -w build/wheels
 ```
+
+## Portable wheels
+
+`wheel_platforms` in `cmake/python-package.json` declares one platform tag per
+CI system. CI repairs the built wheel to that tag and audits its shared-library
+dependencies:
+
+| System | Tag | Tool |
+| --- | --- | --- |
+| Linux x86-64 | `manylinux_2_28_x86_64` | `auditwheel repair --only-plat` |
+| macOS arm64 | `macosx_11_0_arm64` | `delocate-wheel --require-archs arm64 --require-target-macos-version 11.0` |
+| Windows x64 | `win_amd64` | `delvewheel repair` |
+
+`MACOSX_DEPLOYMENT_TARGET` is set from the tag, so Core, which is compiled in
+the same build, has the same target. A wheel that needs newer glibc symbols, a
+newer macOS or another architecture fails the repair. The package checks reject
+any library a tool would bundle (`opentlv.libs/`, `opentlv/.dylibs/`): Core stays
+statically linked, and the extension depends only on the C runtime and Python.
+On Linux and macOS the module is always `_opentlv.abi3.so`: CMake would take
+the platform-qualified stable-ABI suffix that CPython 3.15 reports
+(`.abi3-x86_64-linux-gnu.so`), which CPython 3.11–3.14 cannot import, so the build
+sets the suffix explicitly and the package checks require it.
+The repaired bytes are the ones installed and tested. `twine check --strict`
+validates the metadata and README of every wheel and sdist.
+
+Builds are not bit-for-bit reproducible: each Full configuration produces its own
+bytes for the same filename. Release preparation therefore selects the upload
+set explicitly, as described in [release preparation](../releases.md).
 
 ## Core selection
 
@@ -87,7 +115,6 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 $coreSource = (Resolve-Path ../opentlv).Path
 python -m pip install . "--config-settings=cmake.define.OPENTLV_PYTHON_CORE_SOURCE=$coreSource"
-python -m pip install ./src
 ```
 
 On POSIX shells:
@@ -97,17 +124,16 @@ python3 -m venv .venv
 . .venv/bin/activate
 core_source=$(cd ../opentlv && pwd)
 python -m pip install . --config-settings="cmake.define.OPENTLV_PYTHON_CORE_SOURCE=$core_source"
-python -m pip install ./src
 ```
 
-Rebuild and reinstall the native distribution after changing Core. Without
+Rebuild and reinstall the distribution after changing Core or the Python sources. Without
 this override, the standalone build uses its dependency lock even when a
 sibling Core exists. The override is for local development and is rejected
 in CI; use the pinned build for CI validation.
 
 ## Supported Python versions
 
-Both distributions require Python 3.11 or newer. The native extension targets
+The distribution requires Python 3.11 or newer. The native extension targets
 CPython's 3.11 stable ABI (`cp311-abi3`); the configured Full CI matrix covers
 CPython 3.11 through 3.15 on Linux, Windows and macOS. Matrix configuration is
 not a claim that every hosted run has passed. See the
@@ -180,18 +206,19 @@ of a real attested Core release. Publication and release automation are outside 
 
 ## Validation
 
-Use an isolated virtual environment and install both wheels before checking them:
+Use an isolated virtual environment and install the wheel before checking it:
 
 ```sh
 python -m pip install pytest
 python -m pip install . --config-settings=build-dir=build/native
-python -m pip install ./src
 python -B -m pytest -p no:cacheprovider -q tests/build
 python -B scripts/check_python.py --selection build/native/core-selection.json
 ```
 
-`check_python.py` checks installed build evidence, Python binding version and all
-existing format flags, runs the original pytest suite and eight examples, then
+`check_python.py` checks installed build evidence, that `_opentlv` and `opentlv`
+both belong to the installed `opentlv` distribution and that no `opentlv-core`
+is installed, the Python binding version and all existing format flags, runs the
+original pytest suite and fourteen examples, then
 runs the unchanged Query facade against the selected Core corpus/reference.
 The corpus is staged in a temporary directory; Core-owned test files are not
 copied into this repository. Keep the selected Core source available for this step.
@@ -206,7 +233,7 @@ checks, source selections and limitations.
 
 ## Versioning and ownership
 
-Both Python distribution versions are `0.1.0`. `opentlv.__version__` and
+The Python distribution version is `0.1.0`. `opentlv.__version__` and
 `_opentlv.version_string()` report that Python binding version, generated from
 `cmake/python-package.json` during configuration. Core `0.8.0` is in the
 dependency lock and installed dependency metadata; it no longer supplies the
@@ -220,7 +247,7 @@ publication are not moved by this build integration.
 
 The workflow under `docs/migration/original-python.yml` is historical evidence.
 Standalone PR/Main/Full workflows are documented in
-[quality gates](../quality-gates.md). They validate installed distributions and
+[quality gates](../quality-gates.md). They validate the installed distribution and
 retain the original tests. Source integration #2 did not establish hosted CI
 coverage; #3's [validation record](../validation/ci.md) distinguishes local checks
 from the hosted runs still needed for acceptance. Publication remains separate.

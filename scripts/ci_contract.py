@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 from build_support import ROOT, digest, read, require, run
 from verified_core import lock
-from package_contract import policy as package_policy, validate_artifact_record
+from package_contract import DISTRIBUTION, policy as package_policy, validate_artifact_record
 
 REPOSITORY = "OpenTLV/opentlv-python"
 TIERS = ("pr", "main", "full")
@@ -115,9 +115,8 @@ def validate_records(records, tier, expected_identity, definitions, checks, requ
                 "Missing or incompatible compiler evidence")
         validate_dependency(record["core"], require_release)
         require(record.get("smoke") is True, "Missing installed-package smoke")
-        require(set(record.get("wheels", {})) == {"opentlv", "opentlv-core"}
-                and all(re.fullmatch(r"[0-9a-f]{64}", value)
-                        for value in record["wheels"].values()), "Missing wheel digests")
+        require(set(record.get("wheels", {})) == {DISTRIBUTION}
+                and re.fullmatch(r"[0-9a-f]{64}", record["wheels"][DISTRIBUTION]), "Missing wheel digest")
         validate_artifact_record(record, package_policy())
         if tier != "main":
             tests = record.get("tests", {})

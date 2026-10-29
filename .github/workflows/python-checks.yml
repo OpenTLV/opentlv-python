@@ -53,7 +53,7 @@ jobs:
       - run: python -m pip install -r requirements-dev.txt
       - name: Check CI shell argument handling
         run: python -B -m pytest -p no:cacheprovider -q tests/ci/test_shell.py
-      - name: Build and validate installed distributions
+      - name: Build and validate the installed distribution
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

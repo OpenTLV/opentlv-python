@@ -38,7 +38,6 @@ path = [
     "native/README.md",
     "pyproject.toml",
     "src/README.md",
-    "src/pyproject.toml",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Marek Cingel"

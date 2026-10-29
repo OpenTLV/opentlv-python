@@ -29,8 +29,8 @@ def test_entry_points_do_not_duplicate_full_ci():
 
 def test_matrix_preserves_platforms_and_declared_cpython_floor():
     import tomllib
-    for path in ("pyproject.toml", "src/pyproject.toml"):
-        assert tomllib.loads((ROOT / path).read_text())["project"]["requires-python"] == ">=3.11"
+    assert tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["requires-python"] == ">=3.11"
+    assert not (ROOT / "src/pyproject.toml").exists()
     configurations = matrix("full")
     assert len({item["id"] for item in configurations}) == 15
     assert {item["python"] for item in configurations} == {"3.11", "3.12", "3.13", "3.14", "3.15"}
@@ -119,5 +119,5 @@ def test_ci_evidence_covers_relocated_inputs():
         paths = list((ROOT / directory).rglob(pattern))
         assert paths
         assert all(path.relative_to(ROOT).as_posix() in definitions for path in paths)
-    assert "src/pyproject.toml" in definitions
+    assert "pyproject.toml" in definitions and "requirements-dev.txt" in definitions
     assert "native/CMakeLists.txt" in definitions

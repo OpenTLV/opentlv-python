@@ -3,7 +3,7 @@
 """Run the existing Python suite, full-feature check, examples and selected Core corpus."""
 
 import argparse
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, distribution, version
 import json
 from pathlib import Path
 import re
@@ -17,7 +17,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_support import ROOT, read, require, run, write
 from core_dependency import git_identity
 from ci_contract import junit_counts
-from package_contract import DISTRIBUTIONS, policy
+from package_contract import DISTRIBUTION, policy
+
+
+def installed_version(name):
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
 
 
 def main():
@@ -31,9 +38,10 @@ def main():
         args.output.unlink(missing_ok=True)
     selected = read(args.selection)
     package = policy()
-    versions = {name: version(name) for name in DISTRIBUTIONS}
-    require(versions == dict.fromkeys(DISTRIBUTIONS, package["version"]),
+    versions = {DISTRIBUTION: installed_version(DISTRIBUTION)}
+    require(versions == {DISTRIBUTION: package["version"]},
             "Installed distribution version differs from package policy")
+    require(installed_version("opentlv-core") is None, "The former opentlv-core distribution is installed")
     import _opentlv
     import opentlv
     installed = read(Path(_opentlv.__file__).with_name("_opentlv_core_dependency.json"))
@@ -48,6 +56,10 @@ def main():
     for module in (_opentlv, opentlv):
         require(Path(module.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()),
                 "Module was not imported from the validation environment")
+    # Both layers must be installed by the one distribution.
+    files = {Path(item.locate()).resolve() for item in distribution(DISTRIBUTION).files}
+    require(all(Path(module.__file__).resolve() in files for module in (_opentlv, opentlv)),
+            "Native or public module is not part of the opentlv distribution")
     items = list(opentlv.Reader(bytes.fromhex("02012a")))
     require(len(items) == 1 and bytes(items[0].value) == b"\x2a", "Public Reader smoke failed")
     result = {"smoke": True, "package_versions": versions}

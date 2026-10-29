@@ -20,22 +20,21 @@ existing EMV amount functions are available. Native `HAS_*` flags remain
 unchanged and report enabled providers. Reduced-feature Python packages are
 not supported.
 
-Neither package is published to PyPI yet. Install both by path from a
-checkout of [opentlv-python](https://github.com/OpenTLV/opentlv-python),
-in one `pip install` call so the `opentlv`
-package's dependency on `opentlv-core` resolves to the local build:
+The `opentlv` distribution contains both the native `_opentlv` extension and
+the `opentlv` package. It is not published to PyPI yet. Install it from a
+checkout of [opentlv-python](https://github.com/OpenTLV/opentlv-python):
 
 ```sh
 git clone https://github.com/OpenTLV/opentlv-python.git
 cd opentlv-python
 python -m venv .venv
 # Activate the virtual environment for your shell before installing.
-python -m pip install . ./src
+python -m pip install .
 ```
 
 This requires Python 3.11 or newer, Git, CMake 3.26 or newer and a C99 compiler;
-see [Build](../development/python.md#build). The root native build
-selects its pinned Core dependency independently of a sibling checkout.
+see [Build](../development/python.md#build). The build selects its pinned Core
+dependency independently of a sibling checkout.
 
 ```python
 import opentlv
@@ -448,8 +447,8 @@ constructed bit) is parsed as nested elements, the same way parsing does.
 succeeds completely or leaves the document unchanged, and raises an
 `OpenTLVError` subclass on failure, the same as `Reader`/`Writer`.
 
-A document owns every tag and value it holds — the only part of OpenTLV that
-allocates beyond a Python object's own memory — so close it deterministically
+A document owns every tag and value it holds â€” the only part of OpenTLV that
+allocates beyond a Python object's own memory â€” so close it deterministically
 with `close()` or a `with` block instead of waiting for garbage collection
 when that matters, for example for a large document. A node stays valid
 until it or an ancestor is erased, its parent Value is replaced, or its
@@ -523,7 +522,7 @@ advance past malformed input.
 
 ## Relationship to the C API
 
-`opentlv-core` (imported as `_opentlv`) is a native extension written
+`_opentlv`, installed by the same `opentlv` distribution, is a native extension written
 directly against the CPython C API (no pybind11, cffi or Cython) and the
 CPython Limited API, declaring and calling the public OpenTLV C API;
 `opentlv` wraps it and contains no C API calls of its own, the same split as

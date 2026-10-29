@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Marek Cingel
-"""Independent distribution versions and validation of the actual package bytes."""
+"""One portable distribution, its independent version and validation of the actual package bytes."""
 
 from email.parser import BytesParser
 import json
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 import re
 import tarfile
 import tomllib
@@ -13,8 +13,10 @@ import zipfile
 from build_support import ROOT, digest, read, require
 from verified_core import lock
 
-DISTRIBUTIONS = ("opentlv-core", "opentlv")
-PROJECTS = ("pyproject.toml", "src/pyproject.toml")
+DISTRIBUTION = "opentlv"
+PROJECT = "pyproject.toml"
+# Portable tags only: never a plain linux_x86_64 or an unversioned macOS target.
+PLATFORM_TAGS = {"Linux": r"manylinux_2_\d+_x86_64", "Darwin": r"macosx_\d+_0_arm64", "Windows": r"win_amd64"}
 
 
 def policy(root=ROOT):
@@ -29,85 +31,87 @@ def policy(root=ROOT):
                     for version in compatible), "Declare tested Core versions explicitly")
     pinned = read(root / "cmake/core-artifact.json")
     require(pinned["version"] in compatible, "Locked Core is outside the Python compatibility policy")
+    platforms = value.get("wheel_platforms")
+    systems = {item["system"] for item in read(root / "cmake/ci-matrix.json")["platforms"]}
+    require(isinstance(platforms, dict) and set(platforms) == set(PLATFORM_TAGS) == systems
+            and all(isinstance(tag, str) and re.fullmatch(PLATFORM_TAGS[system], tag)
+                    for system, tag in platforms.items()),
+            "Declare one portable wheel platform tag per CI system")
     inventory = root / "docs/migration/source-inventory.json"
     migration = read(inventory)
     require(value.get("migration") == {"repository": migration["source_repository"],
                                        "commit": migration["source_commit"],
                                        "inventory_sha256": digest(inventory)},
             "Frozen migration provenance differs")
-    for name, path in zip(DISTRIBUTIONS, PROJECTS):
-        project = tomllib.loads((root / path).read_text(encoding="utf-8"))["project"]
-        require(project["name"] == name and project["version"] == value["version"]
-                and project["requires-python"] == value["requires_python"],
-                "Distribution metadata differs from Python package policy")
-        expected = ["opentlv-core==" + value["version"]] if name == "opentlv" else []
-        require(project.get("dependencies", []) == expected, "Python package dependency must be exact")
-        require(project.get("license") == "MIT" and project.get("license-files") == ["LICENSE"],
-                "Distribution license metadata changed")
-    # Hatchling cannot package files outside src/, so the public package keeps a copy.
-    require((root / "src/LICENSE").read_bytes() == (root / "LICENSE").read_bytes(),
-            "src/LICENSE differs from LICENSE")
+    metadata = tomllib.loads((root / PROJECT).read_text(encoding="utf-8"))
+    project = metadata["project"]
+    require(project["name"] == DISTRIBUTION and project["version"] == value["version"]
+            and project["requires-python"] == value["requires_python"],
+            "Distribution metadata differs from Python package policy")
+    require(not project.get("dependencies"), "The distribution must not depend on a separate native package")
+    require(project.get("license") == "MIT" and project.get("license-files") == ["LICENSE"],
+            "Distribution license metadata changed")
+    wheel = metadata.get("tool", {}).get("scikit-build", {}).get("wheel", {})
+    require(wheel.get("packages") == ["src/opentlv"] and wheel.get("py-api") == "cp311",
+            "The wheel must carry src/opentlv beside the stable-ABI extension")
+    # The root pyproject.toml is the only build entry point.
+    require(not (root / "src/pyproject.toml").exists(), "Remove the second build entry point src/pyproject.toml")
     return value
 
 
-def check_metadata(data, name, value):
+def check_metadata(data, value):
     metadata = BytesParser().parsebytes(data)
-    for field, expected in (("Name", name), ("Version", value["version"]),
+    for field, expected in (("Name", DISTRIBUTION), ("Version", value["version"]),
                             ("Requires-Python", value["requires_python"]),
                             ("License-Expression", "MIT"), ("License-File", "LICENSE")):
         require(metadata.get_all(field) == [expected], "Package metadata differs: " + field)
-    dependencies = [re.sub(r"[\s()]", "", item) for item in metadata.get_all("Requires-Dist", [])]
-    require(dependencies == (["opentlv-core==" + value["version"]] if name == "opentlv" else []),
-            "Built package dependency must be exact")
+    require(not metadata.get_all("Requires-Dist"), "Built package must not depend on another distribution")
 
 
-def check_wheel(path, name, value, selected):
-    prefix = name.replace("-", "_") + "-" + value["version"]
-    tag = "cp311-abi3-" if name == "opentlv-core" else "py3-none-any"
-    require(path.name.startswith(prefix + "-" + tag) and path.name.endswith(".whl"),
-            "Unexpected wheel filename/version/tag")
-    info = prefix + ".dist-info/"
+def public_sources():
+    return {path.relative_to(ROOT / "src").as_posix() for path in (ROOT / "src/opentlv").glob("*.py")}
+
+
+def wheel_name(value, system):
+    return f'{DISTRIBUTION}-{value["version"]}-cp311-abi3-{value["wheel_platforms"][system]}.whl'
+
+
+def check_wheel(path, value, selected, system):
+    require(path.name == wheel_name(value, system), "Unexpected wheel filename/version/tag")
+    info = DISTRIBUTION + "-" + value["version"] + ".dist-info/"
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         require(len(names) == len(set(names)), "Duplicate wheel entries")
         require([entry for entry in names if entry.endswith(".dist-info/METADATA")] == [info + "METADATA"],
                 "Unexpected wheel metadata directory")
-        check_metadata(archive.read(info + "METADATA"), name, value)
+        check_metadata(archive.read(info + "METADATA"), value)
         require(info + "licenses/LICENSE" in names and
                 archive.read(info + "licenses/LICENSE") == (ROOT / "LICENSE").read_bytes(),
                 "Wheel license text differs")
+        # The extension links Core statically.
+        require(info + "licenses/OpenTLV/LICENSE" in names and
+                archive.read(info + "licenses/OpenTLV/LICENSE").strip(),
+                "Wheel lacks the Core license")
         wheel = BytesParser().parsebytes(archive.read(info + "WHEEL"))
-        require(wheel.get_all("Tag") == [path.name[len(prefix) + 1:-4]], "Wheel tag differs from filename")
-        require(wheel.get_all("Root-Is-Purelib") == ["false" if name == "opentlv-core" else "true"],
-                "Wheel installation scheme differs")
-        payload = [entry for entry in names if not entry.startswith(info)]
-        if name == "opentlv-core":
-            require(len(payload) == 2 and "_opentlv_core_dependency.json" in payload
-                    and any(entry.startswith("_opentlv.") and entry.endswith((".so", ".pyd"))
-                            and "/" not in entry for entry in payload), "Unexpected native wheel payload")
-            require(json.loads(archive.read("_opentlv_core_dependency.json")) == selected,
-                    "Bundled Core identity differs from build evidence")
-            # The extension links Core statically.
-            require(info + "licenses/OpenTLV/LICENSE" in names and
-                    archive.read(info + "licenses/OpenTLV/LICENSE").strip(),
-                    "Native wheel lacks the Core license")
-        else:
-            require("opentlv/__init__.py" in payload and
-                    all(entry.startswith("opentlv/") and ".." not in PurePosixPath(entry).parts
-                        for entry in payload), "Unexpected public wheel payload")
-            require(set(payload) == {path.relative_to(ROOT / "src").as_posix()
-                                    for path in (ROOT / "src/opentlv").glob("*.py")},
-                    "Public wheel source inventory differs")
+        require(wheel.get_all("Tag") == ["cp311-abi3-" + value["wheel_platforms"][system]],
+                "Wheel tag differs from filename")
+        require(wheel.get_all("Root-Is-Purelib") == ["false"], "Wheel installation scheme differs")
+        # Repair tools add directory entries; every file still has to be expected.
+        payload = {entry for entry in names if not entry.startswith(info) and not entry.endswith("/")}
+        native = "_opentlv.pyd" if system == "Windows" else "_opentlv.abi3.so"
+        require(native in payload, "Wheel lacks the native _opentlv module")
+        require("_opentlv_core_dependency.json" in payload and
+                json.loads(archive.read("_opentlv_core_dependency.json")) == selected,
+                "Bundled Core identity differs from build evidence")
+        # Rejects vendored shared libraries, tests and stale modules alike.
+        require(payload - {native, "_opentlv_core_dependency.json"} == public_sources(),
+                "Wheel source inventory differs")
 
 
-def sdist_inputs(name):
-    """Required build inputs relative to each distribution's source root."""
-    if name == "opentlv":
-        return {"pyproject.toml", "README.md", "LICENSE"} | {
-            path.relative_to(ROOT / "src").as_posix()
-            for path in (ROOT / "src/opentlv").glob("*.py")}
-    return {"CMakeLists.txt", "LICENSE", "README.md", "pyproject.toml", "src/pyproject.toml",
-            "docs/migration/source-inventory.json"} | {
+def sdist_inputs():
+    """Required build inputs relative to the source root."""
+    return {"CMakeLists.txt", "LICENSE", "README.md", "pyproject.toml",
+            "docs/migration/source-inventory.json"} | {"src/" + path for path in public_sources()} | {
                 path.relative_to(ROOT).as_posix()
                 for directory in ("cmake", "scripts", "native")
                 for path in (ROOT / directory).rglob("*")
@@ -115,8 +119,8 @@ def sdist_inputs(name):
                                        or path.name == "CMakeLists.txt")}
 
 
-def check_sdist(path, name, value):
-    prefix = name.replace("-", "_") + "-" + value["version"]
+def check_sdist(path, value):
+    prefix = DISTRIBUTION + "-" + value["version"]
     require(path.name == prefix + ".tar.gz", "Unexpected sdist filename/version")
     with tarfile.open(path) as archive:
         members = archive.getmembers()
@@ -127,69 +131,56 @@ def check_sdist(path, name, value):
                     "\\" not in member.name and ":" not in member.name and
                     (member.isfile() or member.isdir()) for member in members), "Unsafe sdist member")
         relative_names = {member.name[len(prefix) + 1:] for member in members if member.isfile()}
-        require(sdist_inputs(name) <= relative_names, "Sdist is missing build inputs")
+        require(sdist_inputs() <= relative_names, "Sdist is missing build inputs")
         require(not any("bindings" in PurePosixPath(path).parts for path in relative_names),
                 "Sdist contains obsolete bindings layout")
-        if name == "opentlv":
-            require(not any(PurePosixPath(path).parts[0] in ("tests", "examples", "native", "scripts")
-                            for path in relative_names), "Unexpected public sdist payload")
+        require("src/pyproject.toml" not in relative_names, "Sdist contains a second build entry point")
         def content(relative):
             member = archive.getmember(prefix + "/" + relative)
             require(member.isfile(), "Expected a regular sdist input")
             return archive.extractfile(member).read()
-        check_metadata(content("PKG-INFO"), name, value)
+        check_metadata(content("PKG-INFO"), value)
         require(content("LICENSE") == (ROOT / "LICENSE").read_bytes(), "Sdist license text differs")
         project = tomllib.loads(content("pyproject.toml").decode())["project"]
-        require(project["name"] == name and project["version"] == value["version"],
+        require(project["name"] == DISTRIBUTION and project["version"] == value["version"],
                 "Sdist build metadata differs")
-        if name == "opentlv-core":
-            require(json.loads(content("cmake/python-package.json")) == value,
-                    "Sdist package policy differs")
-            require(json.loads(content("cmake/core-artifact.json")) == lock(), "Sdist Core lock differs")
-            require(content("docs/migration/source-inventory.json") ==
-                    (ROOT / "docs/migration/source-inventory.json").read_bytes(),
-                    "Sdist migration provenance differs")
+        require(json.loads(content("cmake/python-package.json")) == value, "Sdist package policy differs")
+        require(json.loads(content("cmake/core-artifact.json")) == lock(), "Sdist Core lock differs")
+        require(content("docs/migration/source-inventory.json") ==
+                (ROOT / "docs/migration/source-inventory.json").read_bytes(),
+                "Sdist migration provenance differs")
 
 
-def artifact_names(tier, value):
-    version = re.escape(value["version"])
-    names = {"wheels/opentlv": rf"opentlv-{version}-py3-none-any\.whl",
-             "wheels/opentlv-core": rf"opentlv_core-{version}-cp311-abi3-[A-Za-z0-9_.]+\.whl"}
+def artifact_names(tier, value, system):
+    names = {"wheels": wheel_name(value, system)}
     if tier == "full":
-        names.update({"sdists/" + name: re.escape(name.replace("-", "_") + "-" + value["version"] + ".tar.gz")
-                      for name in DISTRIBUTIONS})
+        names["sdists"] = f'{DISTRIBUTION}-{value["version"]}.tar.gz'
     return names
 
 
 def validate_artifact_record(record, value):
     require(record.get("package_version") == value["version"], "Package version evidence differs")
-    require(record.get("package_versions") == dict.fromkeys(DISTRIBUTIONS, value["version"]),
+    require(record.get("package_versions") == {DISTRIBUTION: value["version"]},
             "Installed distribution versions differ")
-    expected = artifact_names(record["tier"], value)
+    expected = artifact_names(record["tier"], value, record["configuration"]["system"])
     artifacts = record.get("artifacts", {})
-    require(len(artifacts) == len(expected), "Incomplete package artifact inventory")
-    for key, pattern in expected.items():
-        directory, name = key.split("/")
-        matches = [(path, sha) for path, sha in artifacts.items()
-                   if re.fullmatch(directory + "/" + pattern, path)]
-        require(len(matches) == 1 and re.fullmatch(r"[0-9a-f]{64}", matches[0][1]),
-                "Missing or invalid package digest")
-        if directory == "wheels":
-            require(record["wheels"].get(name) == matches[0][1], "Contradictory wheel digest")
+    require(set(artifacts) == {directory + "/" + name for directory, name in expected.items()}
+            and all(re.fullmatch(r"[0-9a-f]{64}", sha) for sha in artifacts.values()),
+            "Missing or invalid package digest")
+    require(record["wheels"] == {DISTRIBUTION: artifacts["wheels/" + expected["wheels"]]},
+            "Contradictory wheel digest")
 
 
-def inspect_artifacts(work, tier, selected, value):
+def inspect_artifacts(work, tier, selected, value, system):
     result = {}
-    for key, pattern in artifact_names(tier, value).items():
-        directory, name = key.split("/")
-        matches = [path for path in (work / directory).iterdir() if re.fullmatch(pattern, path.name)]
-        require(len(matches) == 1 and matches[0].is_file(), "Missing or duplicate distribution artifact")
-        path = matches[0]
+    for directory, name in artifact_names(tier, value, system).items():
+        path = work / directory / name
+        require(path.is_file(), "Missing distribution artifact: " + name)
         if directory == "wheels":
-            check_wheel(path, name, value, selected)
+            check_wheel(path, value, selected, system)
         else:
-            check_sdist(path, name, value)
-        result[path.relative_to(work).as_posix()] = digest(path)
+            check_sdist(path, value)
+        result[directory + "/" + name] = digest(path)
     actual = {path.relative_to(work).as_posix() for folder in ("wheels", "sdists")
               for path in (work / folder).rglob("*") if path.is_file()}
     require(actual == set(result), "Unexpected distribution artifact")
@@ -198,7 +189,8 @@ def inspect_artifacts(work, tier, selected, value):
 
 def validate_bundle(work, record, value):
     validate_artifact_record(record, value)
-    require(inspect_artifacts(work, record["tier"], record["core"], value) == record["artifacts"],
+    require(inspect_artifacts(work, record["tier"], record["core"], value,
+                              record["configuration"]["system"]) == record["artifacts"],
             "Package bytes differ from validated build")
 
 

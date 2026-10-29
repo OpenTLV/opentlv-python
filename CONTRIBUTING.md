@@ -20,18 +20,19 @@ Use Python 3.11+ and an activated virtual environment. From the repository root:
 ```sh
 python -m pip install -r requirements-dev.txt
 python -m pip install . --config-settings=build-dir=build/native
-python -m pip install ./src
 python -B -m pytest -p no:cacheprovider -q tests/build tests/ci
 python -B scripts/check_python.py --selection build/native/core-selection.json
 ```
 
 Edit public Python code in `src/opentlv`, native implementation in `native/src`
 and Python-owned C adapters in `native/common`. Keep API tests in `tests/python`
-and runnable examples in `examples`; neither belongs in installed packages.
+and runnable examples in `examples`; neither belongs in the installed package.
 Build and validation tools remain in `scripts`.
 
-The root `pyproject.toml` builds `opentlv-core`; `src/pyproject.toml` builds
-`opentlv`. Preserve both distribution names, imports and matching versions.
+The root `pyproject.toml` is the only build entry point: it builds the single
+`opentlv` distribution, which installs `_opentlv` from `native/` and `opentlv`
+from `src/opentlv`. Preserve both imports and keep the source trees separate;
+do not add a second distribution or a dependency on `opentlv-core`.
 See [versioning](docs/versioning.md) before changing package metadata.
 
 Run [source quality checks](docs/quality-gates.md) for affected code. Pull requests
@@ -73,10 +74,9 @@ actual license and owner. `LICENSES/` supplies the license texts referenced by
 SPDX metadata. `scripts/check_quality.py` runs `reuse lint` with the pinned
 REUSE 6.2.0; passing it checks metadata completeness, not legal provenance.
 
-Both wheels and sdists carry `LICENSE`, declared as `license-files` in each
-`pyproject.toml`. Hatchling cannot package files outside `src/`, so
-`src/LICENSE` is a copy that the package policy requires to match `LICENSE`.
-The native wheel links Core statically and installs Core's license from the
-selected Core source as `.dist-info/licenses/OpenTLV/LICENSE`. Add the license
-of every new bundled or linked dependency to the native wheel the same way, and
-extend `scripts/package_contract.py` to require it.
+The wheel and sdist carry `LICENSE`, declared as `license-files` in
+`pyproject.toml`. The extension links Core statically, and the wheel installs
+Core's license from the selected Core source as
+`.dist-info/licenses/OpenTLV/LICENSE`. Add the license of every new bundled or
+linked dependency to the wheel the same way, and extend
+`scripts/package_contract.py` to require it.

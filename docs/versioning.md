@@ -1,15 +1,16 @@
 # Python binding versioning
 
-The standalone binding starts at **0.1.0**, independently of Core. Both
-distributions, `opentlv` and `opentlv-core`, share one binding release version.
-The facade requires `opentlv-core==0.1.0`; mixing different binding releases is
-unsupported. Python remains `>=3.11` and the native wheel retains `cp311-abi3`.
+The standalone binding starts at **0.1.0**, independently of Core. One
+distribution, `opentlv`, carries the native `_opentlv` module and the public
+`opentlv` package, so both layers always have the same binding release version.
+It has no dependencies; the former `opentlv-core` distribution is not published.
+Python remains `>=3.11` and every wheel retains `cp311-abi3`.
 
 `cmake/python-package.json` is the version and compatibility policy. Keep the
-version in `pyproject.toml` and `src/pyproject.toml`, and the facade's exact dependency, in sync
-with it. CMake configuration and source CI reject disagreement. Artifact checks
-also validate the built wheel/sdist metadata, and installed-package checks
-compare both distribution versions and the runtime version string.
+version in `pyproject.toml` in sync with it. CMake configuration and source CI
+reject disagreement. Artifact checks also validate the built wheel/sdist
+metadata, and installed-package checks compare the distribution version and the
+runtime version string.
 
 `opentlv.__version__` and `_opentlv.version_string()` now return the **Python
 binding version**, not the Core version returned at the migration baseline.
@@ -24,7 +25,6 @@ import opentlv
 import _opentlv
 
 assert opentlv.__version__ == _opentlv.version_string() == version("opentlv")
-assert version("opentlv") == version("opentlv-core")
 ```
 
 The first Python release, **0.1.0**, supports exactly Core **0.8.0**; the
@@ -44,11 +44,12 @@ additionally rejects a lock without a release tag.
 The original migration baseline is permanently recorded separately: Core commit
 `5e0aae9c77e9c22d07c7f03d6110243e9ecad85f` and the SHA-256 of
 `docs/migration/source-inventory.json`. Updating the current Core lock must not
-rewrite that historical inventory. The policy and native sdist retain this
-provenance. Historical validation records keep their original version semantics.
+rewrite that historical inventory. The policy and the sdist retain this
+provenance. Historical validation records keep their original version semantics,
+including the two distributions of the GitHub release `v0.1.0`.
 
-To prepare a new binding release, update the policy, both project versions and
-the exact facade dependency together, write the versioned
+To prepare a new binding release, update the policy and the project version
+together, write the versioned
 [release notes](release-notes.md) and close the [changelog](../CHANGELOG.md);
 run source checks and installed-package Full validation, then follow
 [release preparation](releases.md). The initial

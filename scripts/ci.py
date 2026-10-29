@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Marek Cingel
-"""Build and validate installed Python packages, or aggregate exact CI evidence."""
+"""Build and validate the installed Python distribution, or aggregate exact CI evidence."""
 
 import argparse
 import json
@@ -8,37 +8,33 @@ import os
 from pathlib import Path
 import platform
 import sys
+import sysconfig
 import time
 import venv
-import zipfile
 
 from build_support import ROOT, digest, read, require, run, write
 from ci_contract import (TIERS, definition_hashes, identity, matrix,
                          validate_dependency, validate_records)
 from verified_core import lock
-from package_contract import inspect_artifacts, policy as package_policy, validate_bundle
+from package_contract import (DISTRIBUTION, inspect_artifacts, policy as package_policy,
+                              validate_bundle, wheel_name)
 
 
-def wheel_inventory(directory):
-    wheels = {}
-    for wheel in directory.glob("*.whl"):
-        distribution = wheel.name.split("-")[0].replace("_", "-")
-        require(distribution in ("opentlv", "opentlv-core") and distribution not in wheels,
-                "Unexpected or duplicate wheel")
-        with zipfile.ZipFile(wheel) as archive:
-            names = archive.namelist()
-            if distribution == "opentlv-core":
-                require("-cp311-abi3-" in wheel.name, "Native wheel lost its stable ABI tag")
-                payload = [name for name in names if ".dist-info/" not in name]
-                require(len(payload) == 2 and "_opentlv_core_dependency.json" in payload
-                        and any(name.startswith("_opentlv.") and name.endswith((".so", ".pyd"))
-                                for name in payload), "Unexpected native wheel payload")
-            else:
-                require(wheel.name.endswith("-py3-none-any.whl"), "Unexpected public wheel tag")
-                require("opentlv/__init__.py" in names, "Public facade is missing")
-        wheels[distribution] = wheel
-    require(set(wheels) == {"opentlv", "opentlv-core"}, "Both distributions must be built")
-    return wheels
+def portable(raw, destination, system, platform_tag):
+    """Repair the raw wheel to its declared portable tag; the contract rejects vendored libraries."""
+    destination.mkdir()
+    if system == "Linux":
+        # auditwheel runs the patchelf executable installed beside this interpreter.
+        os.environ["PATH"] = sysconfig.get_path("scripts") + os.pathsep + os.environ["PATH"]
+        # --only-plat keeps the declared glibc floor instead of a tag inferred from the runner.
+        run(sys.executable, "-m", "auditwheel", "repair", "--only-plat", "--plat", platform_tag,
+            "--wheel-dir", destination, raw)
+    elif system == "Darwin":
+        run(sys.executable, "-m", "delocate.cmd.delocate_wheel", "--require-archs", "arm64",
+            "--require-target-macos-version", os.environ["MACOSX_DEPLOYMENT_TARGET"],
+            "--wheel-dir", destination, raw)
+    else:
+        run(sys.executable, "-m", "delvewheel", "repair", "--wheel-dir", destination, raw)
 
 
 def build(args):
@@ -63,37 +59,39 @@ def build(args):
               "runtime": {"python": platform.python_version(), "system": platform.system(),
                           "machine": platform.machine()}}
     native = work / "native"
-    wheel_dir = work / "wheels"
-    wheel_dir.mkdir()
-    sources = [ROOT, ROOT / "src"]
+    system = configuration["system"]
+    platform_tag = package["wheel_platforms"][system]
+    if system == "Darwin":
+        # The tag's deployment target also bounds Core, which is compiled in this build.
+        os.environ["MACOSX_DEPLOYMENT_TARGET"] = ".".join(platform_tag.split("_")[1:3])
+    source = ROOT
     if args.tier == "full":
-        sdist_dir = work / "sdists"
-        for source in sources:
-            run(sys.executable, "-B", "-m", "build", "--sdist", "--no-isolation",
-                "--outdir", sdist_dir, source)
-        sources = sorted(sdist_dir.glob("*.tar.gz"))
-        require(len(sources) == 2, "Both source distributions must be built")
-        # Native first, facade second. --no-deps prevents accidental index substitutes.
-        sources.sort(key=lambda path: "opentlv_core-" not in path.name)
-    for index, source in enumerate(sources):
-        settings = [] if index else [
-            "--config-settings=build-dir=" + str(native),
-            "--config-settings=cmake.define.CMAKE_BUILD_TYPE=Release",
-            "--config-settings=cmake.define.OPENTLV_PYTHON_REQUIRE_VERIFIED_CORE="
-            + ("ON" if args.require_release else "OFF")]
-        run(sys.executable, "-B", "-m", "pip", "wheel", "--no-deps", "--no-cache-dir",
-            "--no-build-isolation", *settings, "--wheel-dir", wheel_dir, source)
+        run(sys.executable, "-B", "-m", "build", "--sdist", "--no-isolation",
+            "--outdir", work / "sdists", ROOT)
+        sdists = list((work / "sdists").glob("*.tar.gz"))
+        require(len(sdists) == 1, "Expected one source distribution")
+        source = sdists[0]
+    # --no-deps prevents accidental index substitutes.
+    run(sys.executable, "-B", "-m", "pip", "wheel", "--no-deps", "--no-cache-dir", "--no-build-isolation",
+        "--config-settings=build-dir=" + str(native),
+        "--config-settings=cmake.define.CMAKE_BUILD_TYPE=Release",
+        "--config-settings=cmake.define.OPENTLV_PYTHON_REQUIRE_VERIFIED_CORE="
+        + ("ON" if args.require_release else "OFF"), "--wheel-dir", work / "raw", source)
+    raw = list((work / "raw").glob("*.whl"))
+    require(len(raw) == 1, "Expected one raw wheel")
+    portable(raw[0], work / "wheels", system, platform_tag)
     selected = read(native / "core-selection.json")
     validate_dependency(selected, args.require_release)
-    wheels = wheel_inventory(wheel_dir)
-    artifacts = inspect_artifacts(work, args.tier, selected, package)
+    artifacts = inspect_artifacts(work, args.tier, selected, package, system)
+    run(sys.executable, "-m", "twine", "check", "--strict", *(work / path for path in artifacts))
+    wheel = work / "wheels" / wheel_name(package, system)
     # Runtime installation is isolated from both the build environment and source imports.
     environment = work / "runtime"
     # pip --python supports an empty venv even on distributions without ensurepip.
     venv.EnvBuilder(with_pip=False).create(environment)
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     pip = [sys.executable, "-m", "pip", "--python", python]
-    run(*pip, "install", "--no-index", "--no-deps", *wheels.values())
+    run(*pip, "install", "--no-index", "--no-deps", wheel)
     if args.tier != "main":
         run(*pip, "install", "--no-cache-dir", "pytest>=8,<10")
     run(*pip, "check")
@@ -105,7 +103,7 @@ def build(args):
     record.update(read(report))
     record.update({"core": selected, "compiler": read(native / "core-probe.json"),
                    "packaging": "sdist-wheel" if args.tier == "full" else "wheel",
-                   "wheels": {name: digest(path) for name, path in wheels.items()},
+                   "wheels": {DISTRIBUTION: digest(wheel)},
                    "package_version": package["version"], "artifacts": artifacts,
                    "seconds": time.monotonic() - started, "status": "success"})
     # Check test completeness before uploading a success record.
