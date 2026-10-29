@@ -117,7 +117,8 @@ def test_sdist_rejects_incomplete_or_obsolete_layout(tmp_path, mutation, message
 @pytest.mark.parametrize("mutation,message", [
     ("missing-source", "source inventory"), ("test-payload", "source inventory"),
     ("vendored-library", "source inventory"), ("missing-native", "native _opentlv"),
-    ("version-specific-native", "native _opentlv"), ("core-identity", "Core identity")])
+    ("version-specific-native", "native _opentlv"), ("platform-abi3-native", "native _opentlv"),
+    ("core-identity", "Core identity")])
 def test_wheel_rejects_incomplete_or_foreign_payload(tmp_path, mutation, message):
     record = records()[0]
     artifacts(tmp_path, record)
@@ -136,6 +137,9 @@ def test_wheel_rejects_incomplete_or_foreign_payload(tmp_path, mutation, message
         module = contents.pop("_opentlv.abi3.so")
         if mutation == "version-specific-native":
             contents["_opentlv.cpython-311-x86_64-linux-gnu.so"] = module
+        elif mutation == "platform-abi3-native":
+            # CPython 3.15's default stable-ABI suffix, which 3.11-3.14 cannot import.
+            contents["_opentlv.abi3-x86_64-linux-gnu.so"] = module
     write_wheel(path, contents)
     with pytest.raises(ValueError, match=message):
         packages.check_wheel(path, packages.policy(), record["core"], "Linux")

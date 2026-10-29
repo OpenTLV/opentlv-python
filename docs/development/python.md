@@ -62,6 +62,10 @@ the same build, has the same target. A wheel that needs newer glibc symbols, a
 newer macOS or another architecture fails the repair. The package checks reject
 any library a tool would bundle (`opentlv.libs/`, `opentlv/.dylibs/`): Core stays
 statically linked, and the extension depends only on the C runtime and Python.
+On Linux and macOS the module is always `_opentlv.abi3.so`: CMake would take
+the platform-qualified stable-ABI suffix that CPython 3.15 reports
+(`.abi3-x86_64-linux-gnu.so`), which CPython 3.11–3.14 cannot import, so the build
+sets the suffix explicitly and the package checks require it.
 The repaired bytes are the ones installed and tested. `twine check --strict`
 validates the metadata and README of every wheel and sdist.
 

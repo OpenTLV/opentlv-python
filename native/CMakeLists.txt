@@ -9,6 +9,12 @@
 Python_add_library(_opentlv MODULE USE_SABI 3.11 WITH_SOABI src/module.c src/format.c src/format.h src/codec.c src/codec.h src/compose.c src/generator.c src/generator.h src/reader.c src/reader.h src/writer.c src/writer.h src/schema.c src/schema.h src/query.c src/query.h)
 target_sources(_opentlv PRIVATE src/formats/ber.c src/formats/cer.c
     src/formats/der.c src/formats/emv.c src/formats/nfc_type2.c src/formats/lldp.c)
+if(NOT WIN32)
+    # Python 3.15 reports a platform-qualified stable-ABI suffix, such as
+    # .abi3-x86_64-linux-gnu.so, which Python 3.11-3.14 cannot import. Every
+    # cp311-abi3 wheel uses the suffix all supported interpreters import.
+    set_target_properties(_opentlv PROPERTIES SUFFIX ".abi3.so")
+endif()
 
 target_link_libraries(_opentlv PRIVATE OpenTLV::tlv)
 target_include_directories(_opentlv PRIVATE "${PROJECT_BINARY_DIR}/generated")
