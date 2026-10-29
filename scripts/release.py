@@ -26,6 +26,14 @@ def requested_tag():
     return tag
 
 
+def requested_publication():
+    """Reject a dispatch whose PyPI upload could never run, before Full CI starts."""
+    index = os.environ.get("PYPI_TARGET", "none")
+    require(index in ("none", "testpypi", "pypi"), "Unknown package index")
+    require(index != "pypi" or os.environ.get("PUBLISH_RELEASE") == "true",
+            "PyPI publication requires publish_release: true in the same run")
+
+
 def release_text(tag, version):
     """Require the tag to match the package version, the release notes and the closed changelog."""
     require(re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", tag),
@@ -46,7 +54,8 @@ def unused_tag(tag):
     require(not any(item.get("tag_name") == tag for item in releases), "GitHub release already exists")
 
 
-def preflight(tag):
+def checked_dispatch(tag):
+    """Check the release inputs and the manual main dispatch on the official clean checkout."""
     pinned = lock(True)
     package = policy()
     release_text(tag, package["version"])
@@ -56,8 +65,13 @@ def preflight(tag):
     require(os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and
             os.environ.get("GITHUB_REF") == "refs/heads/main",
             "Dispatch release preparation from main")
-    unused_tag(tag)
     return current, package, pinned
+
+
+def preflight(tag):
+    result = checked_dispatch(tag)
+    unused_tag(tag)
+    return result
 
 
 def select_distributions(records):
@@ -154,6 +168,7 @@ def main():
     prepare.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "preflight":
+        requested_publication()
         preflight(requested_tag())
     else:
         assemble(args.evidence, args.quality, args.output, requested_tag())

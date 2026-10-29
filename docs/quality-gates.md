@@ -2,8 +2,8 @@
 
 Python follows the PR, Main and Full entry points established by standalone Lua.
 Full is reused by the manual release workflow. PR/Main/Full do not publish;
-the release workflow can optionally create a verified GitHub release and tag.
-Package-index publication remains disabled.
+the release workflow can optionally create a verified GitHub release and tag,
+and upload the verified packages to TestPyPI or PyPI through Trusted Publishing.
 
 | Entry point | Trigger | Required work |
 | --- | --- | --- |
@@ -294,7 +294,8 @@ first standalone CI baseline; no hosted speedup or measured latency is claimed.
 The manual [release preparation](releases.md) calls Full with verified Core
 required and assembles only the current run attempt's validated packages.
 Its optional `publish_release` input creates a GitHub release/tag and notifies
-Docs; package-index publication stays disabled. See [versioning](versioning.md) for the binding version
+Docs; its `pypi` input uploads the verified upload set from a protected
+environment. See [versioning](versioning.md) for the binding version
 and the separate Core compatibility policy.
 
 ## Local validation
