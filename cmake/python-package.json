@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "requires_python": ">=3.11",
   "compatible_core_versions": ["0.8.0"],
+  "wheel_platforms": {
+    "Linux": "manylinux_2_28_x86_64",
+    "Darwin": "macosx_11_0_arm64",
+    "Windows": "win_amd64"
+  },
   "migration": {
     "repository": "https://github.com/OpenTLV/opentlv",
     "commit": "5e0aae9c77e9c22d07c7f03d6110243e9ecad85f",

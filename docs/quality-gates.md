@@ -7,9 +7,9 @@ Package-index publication remains disabled.
 
 | Entry point | Trigger | Required work |
 | --- | --- | --- |
-| `python-pr.yml` | Pull request to `main` | Linux/CPython 3.11, both installed wheels, all Python tests, examples, Query facade, infrastructure regressions, native formatting/static analysis and CodeQL; informational Core API coverage |
+| `python-pr.yml` | Pull request to `main` | Linux/CPython 3.11, the installed `manylinux` wheel, all Python tests, examples, Query facade, infrastructure regressions, native formatting/static analysis and CodeQL; informational Core API coverage |
 | `python-main.yml` | Push to `main` | Linux/CPython 3.11 wheel build, fresh installation, package/Core identity and public Reader smoke |
-| `python-full.yml` | Manual dispatch or `workflow_call` | All 15 platform/interpreter configurations, both sdists rebuilt as wheels, full installed-package checks, source quality and CodeQL; informational Core API coverage |
+| `python-full.yml` | Manual dispatch or `workflow_call` | All 15 platform/interpreter configurations, the sdist rebuilt as a portable wheel, full installed-package checks, source quality and CodeQL; informational Core API coverage |
 
 PR has no path filters, so a documentation-only pull request still produces its
 required check. Feature branch pushes do not duplicate PR builds. Main does not
@@ -82,10 +82,12 @@ inventory used by both the workflow planner and the evidence verifier:
 This makes the existing `requires-python >=3.11` declaration explicit for the
 currently released stable versions. Python 3.15 was released on
 [9 October 2026](https://www.python.org/downloads/release/python-3150/).
-The native wheel retains `cp311-abi3`; each matrix interpreter builds and tests
-the extension, but the matrix does not claim testing one identical wheel across
-all interpreter versions. Hosted runner architectures are recorded in evidence;
-these checks are not a manylinux/macOS deployment-target or publication policy.
+Every wheel retains `cp311-abi3`; each matrix interpreter builds and tests
+its own wheel, but the matrix does not claim testing one identical wheel across
+all interpreter versions. Hosted runner architectures are recorded in evidence.
+The wheels are repaired to the declared `manylinux_2_28_x86_64`,
+`macosx_11_0_arm64` and `win_amd64` tags and audited for external libraries; see
+[portable wheels](development/python.md#portable-wheels).
 
 The inventory is 397 pytest cases, fourteen examples and 171 shared Query
 fixtures / 664 checks. Intentional changes to tests or the pinned Core corpus
@@ -101,8 +103,8 @@ They remain unchanged; no native test framework or unrelated test rewrite is
 introduced.
 
 The suite lives in `tests/python` and runnable examples in `examples`.
-CI builds the native distribution from the repository root and the facade from
-`src`; Full rebuilds both source distributions. Source checks and evidence
+CI builds the single `opentlv` distribution from the repository root; Full
+rebuilds its wheel from the sdist. Source checks and evidence
 hashes cover `src/opentlv`, `native/src`, `native/common`, tests and examples.
 The layout normalization does not add Full jobs to the ordinary PR gate.
 
@@ -117,8 +119,8 @@ Source checks parse Python files, validate workflow structure and enforce the
 inherited native `.clang-format` with Core's pinned clang-format 23.1.1.
 They also run `reuse lint` with the pinned REUSE 6.2.0, so every tracked file
 needs SPDX license and copyright metadata (see [licensing](../CONTRIBUTING.md#license-and-provenance)).
-Package checks require the license texts in both wheels and sdists and the Core
-license in the native wheel.
+Package checks require the license text in the wheel and sdist and the Core
+license in the wheel.
 clang-tidy 18 and cppcheck use a filtered compilation database containing every
 Python extension translation unit, without analyzing Core's translation units.
 CodeQL analyzes C and Python. Build/dependency and CI infrastructure regressions
@@ -248,11 +250,14 @@ attestation was consumed.
 
 ## Evidence and required check
 
-Each configuration creates fresh build and runtime directories. Full builds both
-source distributions, rebuilds their wheels outside the repository source tree
-through pip, checks wheel tags/payload and installs only those wheels into an
-isolated virtualenv. The runner verifies imports, `pip check`, Core identity,
-all existing tests/examples and the Query adapter. Main uses the same installed
+Each configuration creates fresh build and runtime directories. Full builds the
+source distribution and rebuilds its wheel outside the repository source tree
+through pip. Every tier repairs the wheel to its portable tag, checks the tag,
+payload and metadata, runs `twine check --strict` and installs only that wheel
+into an isolated virtualenv. The runner verifies imports, that both `_opentlv`
+and `opentlv` come from the `opentlv` distribution and no `opentlv-core` is
+installed, `pip check`, Core identity, all existing tests/examples and the
+Query adapter. Main uses the same installed
 package validation path with only its smoke check.
 
 Successful records include the repository, checkout SHA, run ID and attempt,
@@ -276,11 +281,11 @@ not change repository settings. A workflow file alone does not enforce merging
 rules.
 
 Artifacts include attempt-scoped records, runtime JUnit output, build logs,
-tested wheels and (for Full) both source distributions. Metadata, exact package
-dependencies, wheel payload and tags, migration provenance and bundled Core
+the tested wheel and (for Full) the source distribution. Metadata, the absence
+of package dependencies, wheel payload and tags, migration provenance and bundled Core
 identity are checked before installation. The gate rechecks the uploaded package
 bytes against the build's SHA-256 inventory. Its report binds the full records
-by digest, including the independently versioned Python distributions.
+by digest, including the independently versioned Python distribution.
 The gate uploads `quality.json` only after acceptance. Timing collection uses the
 same run/attempt, excludes itself and retries delayed API completion metadata.
 Reported job seconds are elapsed runner time, not billed minutes. This is the

@@ -2,7 +2,12 @@
 # Copyright (c) 2026 Marek Cingel
 pip>=22.3
 build>=1.2,<2
-hatchling>=1.27,<2
 scikit-build-core>=0.11,<2
 pytest>=8,<10
+twine>=6.1,<8
+# Each platform repairs and audits the wheel for its portable tag.
+auditwheel>=6.1,<7; sys_platform == "linux"
+patchelf>=0.17,<0.20; sys_platform == "linux"
+delocate>=0.13,<0.14; sys_platform == "darwin"
+delvewheel>=1.10,<2; sys_platform == "win32"
 PyYAML>=6,<7

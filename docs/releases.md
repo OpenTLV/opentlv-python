@@ -23,8 +23,8 @@ No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
    `tag: v<version>`.
 3. Preflight requires a manual dispatch from `main` on the official clean
    checkout. It rejects a missing or malformed tag (only stable
-   `vMAJOR.MINOR.PATCH`), a tag that differs from the version of both
-   distributions, release notes that do not start with `# OpenTLV Python <tag>`,
+   `vMAJOR.MINOR.PATCH`), a tag that differs from the distribution version,
+   release notes that do not start with `# OpenTLV Python <tag>`,
    a changelog without the closed section, and a tag or GitHub Release that
    already exists. It never derives a tag from the metadata. Full CI runs in the
    same workflow run with verified Core required across all 15 existing
@@ -33,20 +33,25 @@ No PyPI/TestPyPI credentials or package-index publisher jobs are configured.
    must pass. Dependency verification failures stop the build.
 4. Assembly validates the exact repository, dispatch SHA, run ID and attempt,
    definition hashes, full matrix, quality report and every package checksum.
-   It also opens the packages again to check metadata and dependency identity.
-   A failure produces no completed candidate.
+   It also opens the packages again to check metadata, platform tags, payload
+   and dependency identity. A failure produces no completed candidate.
 5. Download `python-release-candidate-<attempt>` from that run. It contains
    `opentlv-python-<version>.zip`, `manifest.json` and `SHA256SUMS`. The ZIP keeps
-   each configuration's actual tested wheels/sdists, record and shared quality
-   report. The manifest binds the requested tag, each internal file, the Python
-   policy, migration baseline and Core lock to the exact run. All three top-level files receive
+   each configuration's actual tested wheel and sdist, record and shared quality
+   report, plus the upload set in `dist/`. The manifest binds the requested tag,
+   each internal file, the selected `distributions`, the Python policy, migration
+   baseline and Core lock to the exact run. All three top-level files receive
    GitHub build-provenance attestations before artifact upload.
 
 Rerun all jobs when retrying. Earlier attempts' packages or quality reports are
 rejected. Candidate files retain their tested bytes; assembly does not rebuild
-them. Multiple configurations can produce the same wheel filename with different
-bytes, so they remain in separate directories. This archive is a validation
-candidate, not a flat package-index upload directory.
+them. Builds are not bit-for-bit reproducible: the five Python versions of one
+platform produce the same `cp311-abi3` wheel filename with different bytes, and
+every configuration builds its own sdist. They therefore remain in separate
+directories, and assembly selects a unique upload set in `dist/`: each platform's
+wheel from its CPython 3.11 configuration (the stable-ABI floor) and the sdist
+from `linux-3.11`. These are copies of the exact bytes those configurations
+installed and tested, with the same SHA-256, and each filename appears once.
 
 Follow [GitHub's attestation verification instructions](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
 to verify downloaded subjects against `OpenTLV/opentlv-python` and the
@@ -98,26 +103,23 @@ Docs publication and resulting URLs still require end-to-end verification.
 
 ## Future PyPI publication (separate approval and issue)
 
-1. Confirm ownership/availability of both package names, release version and
-   supported platform/architecture targets. Do not infer availability from the
-   local project names.
-2. Establish the final portable wheel policy (including Linux platform tags and
-   external-library inspection), select one artifact per filename and test the
-   final bytes on supported hosts. Current runner-native wheels do not by
-   themselves establish portable PyPI binary coverage. Any repair/rebuild changes
-   the bytes and requires fresh installation tests, checksums and provenance.
-3. Check final metadata and README rendering with `python -m twine check` over
-   the selected wheels and sdists. Keep both distributions at the same version
-   and retain the exact native-package requirement. Validate a clean install
-   using a directory containing only those files and `pip --no-index --find-links`.
-4. Configure separate reviewed TestPyPI and PyPI
-   [Trusted Publishers](https://docs.pypi.org/trusted-publishers/) for both
-   distributions and a protected publishing environment. This is not configured
-   by migration or by the candidate workflow.
-5. After explicit publishing approval, test the selected artifacts on TestPyPI,
-   then publish the approved artifacts to PyPI through the separately implemented
-   publisher. Publish the native dependency before the facade, verify a fresh
-   installation/import, and record the release tag, file hashes and provenance.
+Only the `opentlv` distribution is published; `opentlv-core` is not. Its wheels
+already carry portable platform tags, pass `twine check --strict` and contain
+both the native module and the public package (see
+[portable wheels](development/python.md#portable-wheels)). Publication still needs:
+
+1. Confirmed ownership of the `opentlv` name on TestPyPI and PyPI (#47).
+2. Installation tests of the selected `dist/` bytes on every supported host, not
+   only of each configuration's own build (#50). Validate a clean install from a
+   directory containing only those files with `pip --no-index --find-links`.
+3. Reviewed TestPyPI and PyPI
+   [Trusted Publishers](https://docs.pypi.org/trusted-publishers/) for `opentlv`
+   and a protected publishing environment (#49). This is not configured by
+   migration or by the candidate workflow.
+4. After explicit publishing approval, upload exactly the `dist/` files to
+   TestPyPI, then to PyPI through the separately implemented publisher (#51,
+   #52). Verify a fresh `pip install opentlv` and import, and record the release
+   tag, file hashes and provenance.
 
 Build-tool dependencies currently have bounded/minimum requirements rather than
 a complete environment lock. Exact Core source selection and retained package

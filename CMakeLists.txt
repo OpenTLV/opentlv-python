@@ -11,8 +11,7 @@ if(NOT _package_result EQUAL 0)
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/python-package.json"
-    "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/pyproject.toml")
+    "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/cmake/python-package.json" _python_package)
 string(JSON OPENTLV_PYTHON_VERSION GET "${_python_package}" version)
 configure_file(cmake/python-version.h.in generated/opentlv_python_version.h @ONLY)

@@ -3,6 +3,16 @@
 Python bindings for [OpenTLV](https://github.com/OpenTLV/opentlv), a library
 for parsing, encoding, and working with TLV and TLV-like binary formats.
 
+## Distribution
+
+One distribution, `opentlv`, installs both layers: the native `_opentlv`
+extension and the public `opentlv` package. It has no dependencies; there is no
+separate `opentlv-core` package. Each wheel is a `cp311-abi3` wheel for
+CPython 3.11 and newer, tagged `manylinux_2_28_x86_64` (Linux x86-64),
+`macosx_11_0_arm64` (macOS arm64) or `win_amd64` (Windows x64). Core is linked
+statically, and the extension depends only on the C runtime and Python.
+PyPI publication is not enabled yet; install from source.
+
 ## Install from source
 
 Requires Python 3.11+, a C99 compiler, CMake 3.26+ (the Python build backend
@@ -13,20 +23,16 @@ release. Use a virtual environment:
 ```sh
 python -m venv .venv
 # Activate the virtual environment for your shell.
-python -m pip install . ./src
+python -m pip install .
 ```
 
-The repository root builds the native `opentlv-core` distribution (`_opentlv`
-import). `src` builds the public `opentlv` package.
-Both package versions are `0.1.0`; `opentlv.__version__` and
-`_opentlv.version_string()` report this Python binding version. The public
-package requires exactly the matching native package version. Python releases
-are independent of Core. See [versioning](docs/versioning.md).
+The package version is `0.1.0`; `opentlv.__version__` and
+`_opentlv.version_string()` report this Python binding version. Python
+releases are independent of Core. See [versioning](https://github.com/OpenTLV/opentlv-python/blob/main/docs/versioning.md).
 
 The default build obtains the exact Core release locked in
-[`cmake/core-artifact.json`](cmake/core-artifact.json). It needs no sibling
-checkout and works from the native package's sdist. Core is linked statically
-into a `cp311-abi3` extension. Every required Core capability and format is
+[`cmake/core-artifact.json`](https://github.com/OpenTLV/opentlv-python/blob/main/cmake/core-artifact.json). It needs no sibling
+checkout and works from the sdist. Every required Core capability and format is
 enabled; there are no supported reduced-feature Python packages.
 
 For local Core development, use an explicit absolute checkout path:
@@ -34,7 +40,6 @@ For local Core development, use an explicit absolute checkout path:
 ```sh
 python -m pip install . \
   --config-settings=cmake.define.OPENTLV_PYTHON_CORE_SOURCE=/absolute/path/to/opentlv
-python -m pip install ./src
 ```
 
 On Windows use a path such as `D:/Projects/OpenTLV/opentlv`.
@@ -62,15 +67,16 @@ python -m pip install . \
 
 This rejects the local Core override and a lock without a release tag. A pinned
 Git build is reproducible source selection, not evidence of an attested release.
-See [build and verification details](docs/development/python.md).
+See [build and verification details](https://github.com/OpenTLV/opentlv-python/blob/main/docs/development/python.md).
 
 ## Layout and validation
 
 | Path | Content |
 | --- | --- |
-| `pyproject.toml`, `CMakeLists.txt`, `cmake/` | Standalone native build and Core policy |
-| `native/src/` | Existing native extension implementation |
-| `src/pyproject.toml`, `src/opentlv/` | Public `opentlv` distribution metadata and package sources |
+| `pyproject.toml` | The only build entry point: `opentlv` distribution metadata |
+| `CMakeLists.txt`, `cmake/` | Native build, Core policy and wheel platform policy |
+| `native/src/` | Existing native extension implementation (`_opentlv`) |
+| `src/opentlv/` | Public `opentlv` package sources |
 | `tests/python/` | Existing Python API tests |
 | `examples/` | Fourteen runnable examples, outside the installed package |
 | `native/common/` | Two binding-owned native adapters |
@@ -82,59 +88,62 @@ See [build and verification details](docs/development/python.md).
 Build diagnostics are written to `core-selection.json` in the CMake build
 directory and installed as `_opentlv_core_dependency.json` beside the extension.
 They identify the actual dependency mode, version, commit and verification state.
-See the [user guide](docs/guides/python.md) and
-[migration record](docs/migration.md).
+See the [user guide](https://github.com/OpenTLV/opentlv-python/blob/main/docs/guides/python.md) and
+[migration record](https://github.com/OpenTLV/opentlv-python/blob/main/docs/migration.md).
 
 The initial migration remains reproducible at its historical import commit.
 Its frozen inventory is not rewritten to conceal subsequent build changes.
 
-The two build entry points preserve the existing distribution identities:
-`python -m pip install . ./src` installs both packages. The facade's metadata
-lives beside `src/opentlv` so its sdist is self-contained; the root native
-sdist contains the CMake inputs, dependency resolver and `native/common` adapters.
-Development tooling remains in `scripts/`. See [contributing](CONTRIBUTING.md)
-and the [layout validation record](docs/validation/layout.md).
+The native and public sources stay separate, but one build packages them:
+`python -m pip install .` installs both. The sdist contains the CMake inputs,
+dependency resolver, `native/common` adapters and `src/opentlv`, so it rebuilds
+the complete package. Development tooling remains in `scripts/`. See
+[contributing](https://github.com/OpenTLV/opentlv-python/blob/main/CONTRIBUTING.md) and the
+[layout validation record](https://github.com/OpenTLV/opentlv-python/blob/main/docs/validation/layout.md).
 
 ## Continuous integration
 
 Successful Main builds notify the documentation portal when documentation
-inputs change. See the [notification contract and token permissions](docs/quality-gates.md#documentation-portal-notifications).
+inputs change. See the [notification contract and token permissions](https://github.com/OpenTLV/opentlv-python/blob/main/docs/quality-gates.md#documentation-portal-notifications).
 
 Pull requests run the installed Python suite on Linux/CPython 3.11 and the
 source quality checks. Pushes to `main` run a short build/import/API smoke.
 Manual or reusable Full CI covers CPython 3.11–3.15 on Linux, Windows and macOS,
-including wheel installation from both source distributions.
+including wheel installation from the source distribution. Every tier repairs
+the wheel to its portable tag, rejects bundled external libraries and runs
+`twine check --strict` before installing exactly those bytes.
 
 The stable `Python quality gate` checks all required results and attempt-scoped
 build evidence. Core's own test suites remain disabled. Every tier consumes the
 attested Core release; release callers also enable `require_verified_core`,
 which rejects a lock without a release tag.
-See [quality gates and local commands](docs/quality-gates.md) and
-[local validation](docs/validation/ci.md).
+See [quality gates and local commands](https://github.com/OpenTLV/opentlv-python/blob/main/docs/quality-gates.md) and
+[local validation](https://github.com/OpenTLV/opentlv-python/blob/main/docs/validation/ci.md).
 
 CI retains the tested wheels and source distributions alongside their checksums
-and build records. The manual [release preparation](docs/releases.md) runs
-verified-Core Full CI and assembles an attested candidate with a manifest and
-`SHA256SUMS` for the requested `tag` input, such as `v0.1.0`, which must match
+and build records. The manual [release preparation](https://github.com/OpenTLV/opentlv-python/blob/main/docs/releases.md) runs
+verified-Core Full CI and assembles an attested candidate with a manifest,
+`SHA256SUMS` and a unique upload set of one wheel per platform and one sdist
+for the requested `tag` input, such as `v0.1.0`, which must match
 the package version, changelog and release notes. Set `publish_release: true`
 to create that tag and the GitHub Release with the versioned
-[release notes](docs/release-notes.md) after verification and automatically
+[release notes](https://github.com/OpenTLV/opentlv-python/blob/main/docs/release-notes.md) after verification and automatically
 notify the documentation portal. The default
 remains candidate-only; PyPI publication is disabled. Release history is in the
-[changelog](CHANGELOG.md).
+[changelog](https://github.com/OpenTLV/opentlv-python/blob/main/CHANGELOG.md).
 
 ## License
 
-MIT; see [LICENSE](LICENSE). Marek Cingel holds copyright in his original
+MIT; see [LICENSE](https://github.com/OpenTLV/opentlv-python/blob/main/LICENSE). Marek Cingel holds copyright in his original
 contributions, including the bindings migrated from Core; other contributors
 and third parties retain theirs. SPDX/REUSE metadata covers every tracked file.
-Both wheels and sdists include the license text, and the native `opentlv-core`
-wheel also includes the license of the statically linked Core.
+Wheels and sdists include the license text, and wheels also include the license
+of the statically linked Core.
 
 ## Community
 
 Contribution, conduct, security and support policies are shared across OpenTLV
 in [OpenTLV/.github](https://github.com/OpenTLV/.github); the
-[contributor guide](CONTRIBUTING.md) adds Python-specific instructions. Report
+[contributor guide](https://github.com/OpenTLV/opentlv-python/blob/main/CONTRIBUTING.md) adds Python-specific instructions. Report
 suspected vulnerabilities privately as described in the
 [security policy](https://github.com/OpenTLV/.github/blob/main/SECURITY.md).

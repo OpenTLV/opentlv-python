@@ -3,9 +3,9 @@ requires = ["scikit-build-core>=0.11"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "opentlv-core"
+name = "opentlv"
 version = "0.1.0"
-description = "Native Python extension registering the raw OpenTLV C API"
+description = "Python bindings for OpenTLV, a portable C99 library for reading, writing and validating TLV data"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -17,7 +17,9 @@ Issues = "https://github.com/OpenTLV/opentlv-python/issues"
 
 [tool.scikit-build]
 cmake.version = ">=3.26"
-wheel.packages = []
+# The native module and the public package keep separate source trees and
+# install side by side: _opentlv at the wheel root, opentlv from src/opentlv.
+wheel.packages = ["src/opentlv"]
 wheel.py-api = "cp311"
 build.targets = ["_opentlv"]
 install.components = ["Python"]
