@@ -31,7 +31,7 @@ def bash_executable():
     pytest.fail("Bash is required; set OPENTLV_TEST_BASH to the intended executable")
 
 
-@pytest.mark.parametrize("job", ["build", "gate"])
+@pytest.mark.parametrize("job", ["build", "select", "verify", "gate"])
 @pytest.mark.parametrize("release", ["false", "true"])
 @pytest.mark.parametrize("runner_exit", [0, 23])
 def test_workflow_runner_arguments_and_exit_status(tmp_path, job, release, runner_exit):
@@ -64,8 +64,16 @@ def test_workflow_runner_arguments_and_exit_status(tmp_path, job, release, runne
                      "--output", "build/record.json"]
         log = (work / "build/ci.log").read_text()
         assert "runner stdout\n" in log and "runner stderr\n" in log
+    elif job == "select":
+        expected += ["--evidence", "build/evidence", "--output", "build/upload"]
+    elif job == "verify":
+        expected += ["--configuration", "configuration with spaces", "--upload", "build/upload",
+                     "--work", "build/verify", "--output", "build/verified.json"]
+        log = (work / "build/verify.log").read_text()
+        assert "runner stdout\n" in log and "runner stderr\n" in log
     else:
-        expected += ["--evidence", "build/evidence", "--output", "build/quality.json"]
+        expected += ["--evidence", "build/evidence", "--verification", "build/verification",
+                     "--output", "build/quality.json"]
     if release == "true":
         expected.append("--require-release")
     assert (work / "arguments.bin").read_bytes().split(b"\0") == [

@@ -12,12 +12,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import ci_contract as contract
 import verified_core
 from build_support import ROOT, read
-from package_contract import DISTRIBUTION, artifact_names, policy as package_policy
+from package_contract import DISTRIBUTION, artifact_names, policy as package_policy, wheel_name
 
 IDENTITY = {"repository": contract.REPOSITORY, "commit": "a" * 40, "run_id": "100",
             "run_attempt": "2", "hosted": True, "dirty": False}
 DEFINITIONS = {"scripts/ci.py": "b" * 64}
-CHECKS = {name: {"result": "success"} for name in ("build", "quality", "codeql")}
+JOBS = ("build", "select", "verify", "quality", "codeql")
+
+
+def checks(tier="pr"):
+    """Job results of a successful run: only Full verifies an upload set, Main has no source analysis."""
+    skipped = ({"select", "verify"} if tier != "full" else set()) | (
+        {"quality", "codeql"} if tier == "main" else set())
+    return {name: {"result": "skipped" if name in skipped else "success"} for name in JOBS}
+
+
+CHECKS = checks()
 
 
 def null_lock(monkeypatch):
@@ -49,14 +59,33 @@ def records(tier="pr"):
             for item in contract.matrix(tier)]
 
 
+def verifications(data):
+    """What each Full configuration records after installing its platform's selected wheel."""
+    package = package_policy()
+    upload = contract.select_distributions(data)
+    builds = {record["configuration"]["id"]: record for record in data}
+    result = []
+    for record in data:
+        wheel = wheel_name(package, record["configuration"]["system"])
+        source = builds[upload[wheel]["source"].split("/")[0]]
+        result.append(copy.deepcopy({key: record[key] for key in (
+            "schema", "tier", "status", "identity", "definitions", "configuration", "require_release",
+            "runtime", "smoke", "package_versions", "tests", "examples", "query")}) | {
+            "kind": "upload-verification", "core": copy.deepcopy(source["core"]),
+            "upload": {name: item["sha256"] for name, item in upload.items()},
+            "installed": {wheel: upload[wheel]["sha256"]}})
+    return result
+
+
 @pytest.mark.parametrize("tier", contract.TIERS)
 def test_complete_gate(tier):
-    checks = copy.deepcopy(CHECKS)
-    if tier == "main":
-        checks["quality"]["result"] = checks["codeql"]["result"] = "skipped"
-    report = contract.validate_records(records(tier), tier, IDENTITY, DEFINITIONS, checks)
+    data = records(tier)
+    report = contract.validate_records(data, tier, IDENTITY, DEFINITIONS, checks(tier), False,
+                                       verifications(data) if tier == "full" else ())
     assert report["status"] == "success"
     assert len(report["configurations"]) == (15 if tier == "full" else 1)
+    assert len(report["upload"]) == (4 if tier == "full" else 0)
+    assert len(report["verifications"]) == (15 if tier == "full" else 0)
 
 
 @pytest.mark.parametrize("path,value", [
@@ -93,23 +122,37 @@ def test_rejects_incomplete_or_foreign_record(path, value):
 @pytest.mark.parametrize("kind", ["missing", "duplicate", "substitution"])
 def test_rejects_partial_full_matrix(kind):
     data = records("full")
+    verified = verifications(data)
     if kind == "missing":
         data.pop()
     elif kind == "duplicate":
         data.append(copy.deepcopy(data[0]))
     else:
         data[-1] = copy.deepcopy(data[0])
-    with pytest.raises(ValueError):
-        contract.validate_records(data, "full", IDENTITY, DEFINITIONS, CHECKS)
+    with pytest.raises(ValueError, match="configuration"):
+        contract.validate_records(data, "full", IDENTITY, DEFINITIONS, checks("full"), False, verified)
 
 
 @pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", None])
-@pytest.mark.parametrize("job", ["build", "quality", "codeql"])
+@pytest.mark.parametrize("job", JOBS)
 def test_rejects_unsuccessful_prerequisites(job, result):
-    checks = copy.deepcopy(CHECKS)
-    checks[job]["result"] = result
-    with pytest.raises(ValueError):
-        contract.validate_records(records(), "pr", IDENTITY, DEFINITIONS, checks)
+    data = records("full")
+    results = checks("full")
+    results[job]["result"] = result
+    with pytest.raises(ValueError, match="prerequisite: " + job):
+        contract.validate_records(data, "full", IDENTITY, DEFINITIONS, results, False, verifications(data))
+
+
+@pytest.mark.parametrize("tier", ["pr", "main"])
+@pytest.mark.parametrize("job", ["select", "verify"])
+def test_only_full_verifies_an_upload_set(tier, job):
+    results = checks(tier)
+    results[job]["result"] = "success"
+    with pytest.raises(ValueError, match="prerequisite: " + job):
+        contract.validate_records(records(tier), tier, IDENTITY, DEFINITIONS, results)
+    with pytest.raises(ValueError, match="Only Full"):
+        contract.validate_records(records(tier), tier, IDENTITY, DEFINITIONS, checks(tier), False,
+                                  verifications(records("full"))[:1])
 
 
 def test_rejects_missing_prerequisite():
@@ -140,7 +183,7 @@ def test_release_fails_with_null_lock(monkeypatch):
     for record in data:
         record["require_release"] = True
     with pytest.raises(ValueError, match="published Core"):
-        contract.validate_records(data, "full", IDENTITY, DEFINITIONS, CHECKS, True)
+        contract.validate_records(data, "full", IDENTITY, DEFINITIONS, checks("full"), True, verifications(data))
 
 
 def test_release_requires_attestation():

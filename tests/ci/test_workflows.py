@@ -44,12 +44,36 @@ def test_always_running_gate_and_attempt_scoped_artifacts():
     gate = checks["jobs"]["gate"]
     assert gate["name"] == "Python quality gate"
     assert gate["if"] == "always()"
-    assert set(gate["needs"]) == {"build", "quality", "codeql"}
+    assert set(gate["needs"]) == {"build", "select", "verify", "quality", "codeql"}
     for job in checks["jobs"].values():
         for step in job.get("steps", []):
             if step.get("uses", "").startswith("actions/upload-artifact@"):
                 assert "github.run_attempt" in step["with"]["name"]
                 assert step["with"]["if-no-files-found"] == "error"
+
+
+def test_full_verifies_the_selected_upload_set_on_every_configuration():
+    jobs = workflow("python-checks.yml")["jobs"]
+    select, verify = jobs["select"], jobs["verify"]
+    assert select["if"] == verify["if"] == "inputs.tier == 'full'"
+    assert select["needs"] == "build" and set(verify["needs"]) == {"plan", "select"}
+    # The same matrix as the builds, on each configuration's own runner and interpreter.
+    assert verify["strategy"]["matrix"] == jobs["build"]["strategy"]["matrix"]
+    assert verify["runs-on"] == jobs["build"]["runs-on"]
+    uploads = [step["with"]["name"] for step in select["steps"]
+               if step.get("uses", "").startswith("actions/upload-artifact@")]
+    downloads = [step["with"]["name"] for step in verify["steps"]
+                 if step.get("uses", "").startswith("actions/download-artifact@")]
+    assert uploads == downloads == ["python-upload-${{ inputs.tier }}-${{ github.run_attempt }}"]
+    # Verification uses no source build: no development requirements, compilers or package repair.
+    assert not any("requirements-dev.txt" in step.get("run", "") for step in verify["steps"])
+    gate = [step["with"] for step in jobs["gate"]["steps"] if step.get("uses", "").startswith("actions/download-artifact@")]
+    assert {"pattern": "python-verify-${{ inputs.tier }}-*-${{ github.run_attempt }}",
+            "path": "build/verification"} in gate
+    assemble = workflow("python-release.yml")["jobs"]["assemble"]
+    assert any(step.get("with", {}).get("pattern") == "python-verify-full-*-${{ github.run_attempt }}"
+               for step in assemble["steps"])
+    assert any("--verification build/verification" in step.get("run", "") for step in assemble["steps"])
 
 
 def test_core_native_tests_stay_disabled():

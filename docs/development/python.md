@@ -70,8 +70,10 @@ The repaired bytes are the ones installed and tested. `twine check --strict`
 validates the metadata and README of every wheel and sdist.
 
 Builds are not bit-for-bit reproducible: each Full configuration produces its own
-bytes for the same filename. Release preparation therefore selects the upload
-set explicitly, as described in [release preparation](../releases.md).
+bytes for the same filename. Full CI therefore selects the upload set explicitly
+and tests those exact files on every configuration, as described in
+[upload set verification](../quality-gates.md#upload-set-verification) and
+[release preparation](../releases.md).
 
 ## Core selection
 

@@ -8,8 +8,8 @@ and upload the verified packages to TestPyPI or PyPI through Trusted Publishing.
 | Entry point | Trigger | Required work |
 | --- | --- | --- |
 | `python-pr.yml` | Pull request to `main` | Linux/CPython 3.11, the installed `manylinux` wheel, all Python tests, examples, Query facade, infrastructure regressions, native formatting/static analysis and CodeQL; informational Core API coverage |
-| `python-main.yml` | Push to `main` | Linux/CPython 3.11 wheel build, fresh installation, package/Core identity and public Reader smoke |
-| `python-full.yml` | Manual dispatch or `workflow_call` | All 15 platform/interpreter configurations, the sdist rebuilt as a portable wheel, full installed-package checks, source quality and CodeQL; informational Core API coverage |
+| `python-main.yml` | Push to `main` | Linux/CPython 3.11 wheel build, fresh installation, package/Core identity and public Reader, Writer and error smoke |
+| `python-full.yml` | Manual dispatch or `workflow_call` | All 15 platform/interpreter configurations, the sdist rebuilt as a portable wheel, full installed-package checks, then the selected upload set installed by name and tested on all 15 configurations, source quality and CodeQL; informational Core API coverage |
 
 PR has no path filters, so a documentation-only pull request still produces its
 required check. Feature branch pushes do not duplicate PR builds. Main does not
@@ -83,8 +83,9 @@ This makes the existing `requires-python >=3.11` declaration explicit for the
 currently released stable versions. Python 3.15 was released on
 [9 October 2026](https://www.python.org/downloads/release/python-3150/).
 Every wheel retains `cp311-abi3`; each matrix interpreter builds and tests
-its own wheel, but the matrix does not claim testing one identical wheel across
-all interpreter versions. Hosted runner architectures are recorded in evidence.
+its own wheel, and Full then installs each platform's one selected wheel on all
+five interpreters (see [upload set verification](#upload-set-verification)).
+Hosted runner architectures are recorded in evidence.
 The wheels are repaired to the declared `manylinux_2_28_x86_64`,
 `macosx_11_0_arm64` and `win_amd64` tags and audited for external libraries; see
 [portable wheels](development/python.md#portable-wheels).
@@ -126,8 +127,9 @@ Python extension translation unit, without analyzing Core's translation units.
 CodeQL analyzes C and Python. Build/dependency and CI infrastructure regressions
 run with pytest. No new Python formatting policy is imposed on migrated tests.
 
-Each build configuration also executes the workflow's build and gate shell steps
-with a stub runner before building packages. These eight regression cases verify
+Each build configuration also executes the workflow's build, upload set
+selection, verification and gate shell steps with a stub runner before building
+packages. These sixteen regression cases verify
 optional release arguments, quoting, logs and failure propagation, including
 through `tee`. Both commands use nonempty arrays so `set -u` also works with
 macOS Bash 3.2. For local shell-specific checks, set `OPENTLV_TEST_BASH` to the
@@ -256,7 +258,8 @@ through pip. Every tier repairs the wheel to its portable tag, checks the tag,
 payload and metadata, runs `twine check --strict` and installs only that wheel
 into an isolated virtualenv. The runner verifies imports, that both `_opentlv`
 and `opentlv` come from the `opentlv` distribution and no `opentlv-core` is
-installed, `pip check`, Core identity, all existing tests/examples and the
+installed, `pip check`, Core identity, a public parse, write and
+`TruncatedError` smoke, all existing tests/examples and the
 Query adapter. Main uses the same installed
 package validation path with only its smoke check.
 
@@ -267,8 +270,9 @@ native/Python sources, tests and dependency configuration. Local runs explicitly
 record `hosted: false` and their checkout's dirty state.
 
 `Python quality gate` runs even after failed prerequisites. It requires the
-exact matrix and all applicable job results. Main explicitly permits only the
-source-quality and CodeQL jobs to be skipped. Missing, duplicate, stale,
+exact matrix and all applicable job results. PR and Main must skip the Full-only
+upload set selection and verification; Main also skips the source-quality and
+CodeQL jobs. Missing, duplicate, stale,
 foreign, cancelled, unexpectedly skipped or unsuccessful evidence fails.
 Success evidence is removed before each attempt, so a failed rerun cannot reuse
 an old success. The gate CLI accepts only an official clean hosted checkout.
@@ -290,6 +294,51 @@ The gate uploads `quality.json` only after acceptance. Timing collection uses th
 same run/attempt, excludes itself and retries delayed API completion metadata.
 Reported job seconds are elapsed runner time, not billed minutes. This is the
 first standalone CI baseline; no hosted speedup or measured latency is claimed.
+
+## Upload set verification
+
+Each Full configuration builds and tests its own bytes, but only one wheel per
+platform and one sdist are published. After all builds succeed, `Python upload
+set` (`scripts/ci.py select`) checks that every build record is from this run
+attempt and that its uploaded packages still have the recorded SHA-256. It then
+selects each platform's CPython 3.11 wheel and the `linux-3.11` sdist, the same
+choice that release assembly uses. Every configuration rebuilt its wheel from
+its own sdist; the files inside each of those sdists must be byte-identical to
+the selected one, so only the archive metadata differs. The
+`python-upload-full-<attempt>` artifact holds the files in `dist/` and
+`selection.json` with their digests, sources and the Core identity of each wheel.
+
+`Python upload set / <configuration>` (`scripts/ci.py verify`) then runs on all
+15 configurations, on their own runners and interpreters, without building
+anything. It rechecks the downloaded files against the selection, the attempt
+and the package contract (tags, payload, native module, metadata without
+dependencies and license texts). It installs into a fresh virtualenv by name
+from the upload set alone:
+
+```sh
+pip install --no-index --find-links build/upload/dist --only-binary :all: \
+  --require-hashes --report install.json -r requirements.txt
+# requirements.txt: opentlv==<version> --hash=sha256:<this platform's selected wheel>
+```
+
+So pip has to choose the platform's selected wheel for the running interpreter.
+An incompatible or missing wheel finds no distribution, the sdist is never built,
+and other bytes fail the hash. The installation report must name exactly that
+wheel and digest. Like a build, the configuration then runs `pip check` and
+`check_python.py` with all tests, examples and the Query adapter. The Query
+corpus comes from the attested Verified Source of the Core release the wheel
+was built with.
+
+The gate downloads the `python-verify-full-<configuration>-<attempt>` records
+and derives the upload set from the build records again. It requires one
+successful verification per Full configuration of this attempt that tested
+exactly those digests, installed its own platform's wheel, recorded the build's
+Core identity and ran the complete suite. `quality.json` records the upload set
+and the verification digests. A missing native module, a dependency on
+`opentlv-core`, an unsupported wheel tag, or bytes that differ from the tested
+ones therefore fail Full and leave no release candidate.
+
+## Release preparation
 
 The manual [release preparation](releases.md) calls Full with verified Core
 required and assembles only the current run attempt's validated packages.

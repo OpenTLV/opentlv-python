@@ -30,6 +30,7 @@ def installed_version(name):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--selection", type=Path, required=True)
+    parser.add_argument("--corpus", type=Path)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--junit", type=Path)
@@ -62,6 +63,16 @@ def main():
             "Native or public module is not part of the opentlv distribution")
     items = list(opentlv.Reader(bytes.fromhex("02012a")))
     require(len(items) == 1 and bytes(items[0].value) == b"\x2a", "Public Reader smoke failed")
+    writer = opentlv.Writer()
+    writer.write(opentlv.Tag(b"\x02"), b"\x2a")
+    require(writer.bytes() == bytes.fromhex("02012a"), "Public Writer smoke failed")
+    # Native diagnostics must still reach the public exception hierarchy.
+    try:
+        list(opentlv.Reader(bytes.fromhex("02022a")))
+    except opentlv.TruncatedError as error:
+        require(error.offset == 2, "Public error smoke reported another offset")
+    else:
+        raise ValueError("Public error smoke accepted truncated input")
     result = {"smoke": True, "package_versions": versions}
     if args.smoke:
         if args.output:
@@ -76,7 +87,8 @@ def main():
     for example in examples:
         run(sys.executable, "-B", example)
     result["examples"] = len(examples)
-    source = Path(selected["source_path"])
+    # A verification job installs another runner's wheel and fetches the same Core corpus itself.
+    source = args.corpus or Path(selected["source_path"])
     if selected["mode"] in ("pinned-git", "local-source"):
         identity = git_identity(source)
         require(identity["commit"] == selected["commit"], "Core corpus revision changed")

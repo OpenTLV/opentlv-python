@@ -71,12 +71,16 @@ jobs:
         with:
           pattern: python-build-full-*-${{ github.run_attempt }}
           path: build/evidence
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-verify-full-*-${{ github.run_attempt }}
+          path: build/verification
       - env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: >-
           python -B scripts/release.py assemble --evidence build/evidence
-          --quality build/quality/quality.json --output build/release
+          --verification build/verification --quality build/quality/quality.json --output build/release
       - uses: actions/attest-build-provenance@v3
         with:
           subject-path: build/release/*

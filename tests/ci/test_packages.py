@@ -19,7 +19,7 @@ import ci_contract
 import package_contract as packages
 from package_contract import DISTRIBUTION
 import release
-from test_gate import CHECKS, IDENTITY, null_lock, records
+from test_gate import IDENTITY, checks, null_lock, records, verifications
 
 PREFIX = DISTRIBUTION + "-" + packages.policy()["version"]
 
@@ -306,14 +306,18 @@ def release_fixture(tmp_path, monkeypatch):
         directory = evidence / record["configuration"]["id"]
         artifacts(directory / "ci", record)
         write(directory / "record.json", record)
+    verification = tmp_path / "verification"
+    verified_records = verifications(data)
+    for record in verified_records:
+        write(verification / ("python-verify-full-" + record["configuration"]["id"]) / "verified.json", record)
     quality = tmp_path / "quality.json"
-    write(quality, ci_contract.validate_records(data, "full", IDENTITY, {}, CHECKS, True))
-    return evidence, quality, tmp_path / "release"
+    write(quality, ci_contract.validate_records(data, "full", IDENTITY, {}, checks("full"), True, verified_records))
+    return evidence, verification, quality, tmp_path / "release"
 
 
 def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypatch):
-    evidence, quality, output = release_fixture(tmp_path, monkeypatch)
-    release.assemble(evidence, quality, output, "v0.1.0")
+    evidence, verification, quality, output = release_fixture(tmp_path, monkeypatch)
+    release.assemble(evidence, verification, quality, output, "v0.1.0")
     manifest = read(output / "manifest.json")
     assert manifest["publication_enabled"] is False
     assert manifest["tag"] == "v0.1.0"
@@ -343,25 +347,39 @@ def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypat
             assert hashlib.sha256(archive.read(name)).hexdigest() == sha
         assert sorted(name for name in archive.namelist() if name.startswith("dist/")) == sorted(
             "dist/" + name for name in manifest["distributions"])
+        # Every configuration's evidence that it installed and tested the selected wheel.
+        assert sorted(name for name in archive.namelist() if name.endswith("/verified.json")) == sorted(
+            item["id"] + "/verified.json" for item in ci_contract.matrix("full"))
+    assert manifest["distributions"] == read(quality)["upload"]
     with pytest.raises(ValueError, match="fresh"):
-        release.assemble(evidence, quality, output, "v0.1.0")
+        release.assemble(evidence, verification, quality, output, "v0.1.0")
 
 
 @pytest.mark.parametrize("missing", ["windows-3.11", "linux-3.11"])
 def test_upload_set_requires_every_platform_and_the_sdist(missing):
     data = records("full")
-    assert len(release.select_distributions(data)) == 4
+    assert len(ci_contract.select_distributions(data)) == 4
     with pytest.raises(ValueError, match="Incomplete distribution upload set"):
-        release.select_distributions([record for record in data if record["configuration"]["id"] != missing])
+        ci_contract.select_distributions([record for record in data if record["configuration"]["id"] != missing])
 
 
-@pytest.mark.parametrize("mutation", ["attempt", "missing", "digest", "quality", "unverified"])
+@pytest.mark.parametrize("mutation", ["attempt", "missing", "digest", "quality", "unverified",
+                                      "verification-missing", "verification-bytes"])
 def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation):
-    evidence, quality, output = release_fixture(tmp_path, monkeypatch)
+    evidence, verification, quality, output = release_fixture(tmp_path, monkeypatch)
     path = next(evidence.rglob("record.json"))
     record = read(path)
     if mutation == "missing":
         path.unlink()
+    elif mutation.startswith("verification"):
+        verified = next(verification.rglob("verified.json"))
+        if mutation == "verification-missing":
+            verified.unlink()
+        else:
+            # A configuration that installed other bytes than the upload set.
+            data = read(verified)
+            data["installed"] = dict.fromkeys(data["installed"], "0" * 64)
+            write(verified, data)
     elif mutation == "quality":
         report = read(quality)
         report["records"][record["configuration"]["id"]] = "0" * 64
@@ -376,7 +394,7 @@ def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation
             record["core"]["verified"] = False
         write(path, record)
     with pytest.raises(ValueError):
-        release.assemble(evidence, quality, output, "v0.1.0")
+        release.assemble(evidence, verification, quality, output, "v0.1.0")
     assert not output.exists()
 
 

@@ -79,6 +79,83 @@ jobs:
             build/ci/wheels/*
             build/ci/sdists/*
           if-no-files-found: error
+  select:
+    name: Python upload set
+    needs: build
+    if: inputs.tier == 'full'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-build-${{ inputs.tier }}-*-${{ github.run_attempt }}
+          path: build/evidence
+      - name: Select one wheel per platform and the sdist from the tested builds
+        shell: bash
+        env:
+          TIER: ${{ inputs.tier }}
+          REQUIRE_RELEASE: ${{ inputs.require_verified_core }}
+        run: |
+          set -euo pipefail
+          ci_command=(python -B scripts/ci.py select --tier "$TIER" --evidence build/evidence
+            --output build/upload)
+          if [[ "$REQUIRE_RELEASE" == true ]]; then ci_command+=(--require-release); fi
+          "${ci_command[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-upload-${{ inputs.tier }}-${{ github.run_attempt }}
+          path: build/upload
+          if-no-files-found: error
+  verify:
+    needs: [plan, select]
+    name: Python upload set / ${{ matrix.id }}
+    if: inputs.tier == 'full'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-upload-${{ inputs.tier }}-${{ github.run_attempt }}
+          path: build/upload
+      - name: Install the selected wheel by name and run the installed checks
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TIER: ${{ inputs.tier }}
+          CONFIGURATION: ${{ matrix.id }}
+          REQUIRE_RELEASE: ${{ inputs.require_verified_core }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          ci_command=(python -B scripts/ci.py verify --tier "$TIER" --configuration "$CONFIGURATION"
+            --upload build/upload --work build/verify --output build/verified.json)
+          if [[ "$REQUIRE_RELEASE" == true ]]; then ci_command+=(--require-release); fi
+          "${ci_command[@]}" 2>&1 | tee build/verify.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-verify-${{ inputs.tier }}-${{ matrix.id }}-${{ github.run_attempt }}
+          path: |
+            build/verified.json
+            build/verify.log
+            build/verify/install.json
+            build/verify/pytest.xml
+          if-no-files-found: error
   quality:
     if: inputs.tier != 'main'
     uses: ./.github/workflows/python-quality.yml
@@ -117,7 +194,7 @@ jobs:
   gate:
     name: Python quality gate
     if: always()
-    needs: [build, quality, codeql]
+    needs: [build, select, verify, quality, codeql]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -130,6 +207,11 @@ jobs:
         with:
           pattern: python-build-${{ inputs.tier }}-*-${{ github.run_attempt }}
           path: build/evidence
+      - uses: actions/download-artifact@v4
+        if: inputs.tier == 'full'
+        with:
+          pattern: python-verify-${{ inputs.tier }}-*-${{ github.run_attempt }}
+          path: build/verification
       - shell: bash
         env:
           CHECK_RESULTS: ${{ toJSON(needs) }}
@@ -138,7 +220,7 @@ jobs:
         run: |
           set -euo pipefail
           ci_command=(python -B scripts/ci.py gate --tier "$TIER" --evidence build/evidence
-            --output build/quality.json)
+            --verification build/verification --output build/quality.json)
           if [[ "$REQUIRE_RELEASE" == true ]]; then ci_command+=(--require-release); fi
           "${ci_command[@]}"
       - uses: actions/upload-artifact@v4
