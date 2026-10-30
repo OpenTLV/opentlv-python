@@ -98,8 +98,10 @@ def test_release_prepares_attested_artifacts_and_only_opts_into_github_publicati
     assert any(step.get("uses", "").startswith("actions/attest-build-provenance@")
                for step in release["jobs"]["assemble"]["steps"])
     assert release["on"]["workflow_dispatch"]["inputs"]["publish_release"]["default"] == "false"
-    assert release["jobs"]["publish"]["if"] == "inputs.publish_release"
-    assert set(release["jobs"]["publish"]["needs"]) == {"full", "assemble"}
+    publish = " ".join(release["jobs"]["publish"]["if"].split())
+    assert "!cancelled() && inputs.publish_release && needs.preflight.result == 'success'" in publish
+    assert "(needs.assemble.result == 'success' || inputs.candidate_run != '')" in publish
+    assert set(release["jobs"]["publish"]["needs"]) == {"preflight", "full", "assemble"}
     assert release["jobs"]["publish"]["permissions"]["contents"] == "write"
     for path in (ROOT / ".github/workflows").glob("*.yml"):
         text = path.read_text()
@@ -124,11 +126,12 @@ def test_package_index_upload_uses_only_protected_trusted_publishing():
     assert job["environment"]["name"] == "${{ inputs.pypi }}"
     assert job["permissions"] == {"contents": "read", "actions": "read", "attestations": "read",
                                   "id-token": "write"}
-    assert set(job["needs"]) == {"full", "assemble", "publish"}
+    assert set(job["needs"]) == {"preflight", "full", "assemble", "publish"}
     condition = " ".join(job["if"].split())
-    assert "inputs.pypi != 'none'" in condition and "needs.full.result == 'success'" in condition
-    assert ("(needs.publish.result == 'success' || (inputs.pypi == 'testpypi' && "
-            "needs.publish.result == 'skipped'))") in condition
+    # Staging needs this run's Full and leaves the tag unused; PyPI follows a promotion's GitHub release.
+    assert ("(inputs.pypi == 'testpypi' && needs.full.result == 'success' && needs.assemble.result == 'success' && "
+            "needs.publish.result == 'skipped')") in condition
+    assert "(inputs.pypi == 'pypi' && inputs.candidate_run != '' && needs.publish.result == 'success')" in condition
     steps = job["steps"]
     uploads = [step for step in steps if step.get("uses", "").startswith("pypa/gh-action-pypi-publish@")]
     assert len(uploads) == 1
@@ -145,6 +148,45 @@ def test_package_index_upload_uses_only_protected_trusted_publishing():
     assert "secrets." not in text and "password" not in text
     preflight = next(step for step in jobs["preflight"]["steps"] if "release.py preflight" in step.get("run", ""))
     assert preflight["env"]["PYPI_TARGET"] == "${{ inputs.pypi }}"
+    assert preflight["env"]["CANDIDATE_RUN"] == "${{ inputs.candidate_run }}"
+
+
+def test_promotion_builds_nothing_and_uses_the_staged_evidence():
+    release = workflow("python-release.yml")
+    jobs = release["jobs"]
+    assert release["on"]["workflow_dispatch"]["inputs"]["candidate_run"]["default"] == ""
+    assert jobs["full"]["if"] == jobs["assemble"]["if"] == "inputs.candidate_run == ''"
+    for name in ("publish", "pypi"):
+        steps = jobs[name]["steps"]
+        fresh = [step for step in steps if step.get("uses", "").startswith("actions/download-artifact@")]
+        assert [step["if"] for step in fresh] == ["inputs.candidate_run == ''"]
+        staged = [step for step in steps if "gh run download" in step.get("run", "")]
+        assert len(staged) == 1 and staged[0]["if"] == "inputs.candidate_run != ''"
+        # The input reaches the shell only through the environment.
+        assert staged[0]["env"]["CANDIDATE_RUN"] == "${{ inputs.candidate_run }}"
+        assert "inputs." not in staged[0]["run"]
+        for pattern in ("python-release-candidate-*", "python-package-index-testpypi-*",
+                        "python-index-install-testpypi-*"):
+            assert f"--pattern '{pattern}'" in staged[0]["run"]
+        verification = next(step for step in steps if "CANDIDATE_RUN" in step.get("env", {})
+                            and "gh run download" not in step.get("run", ""))
+        assert verification["env"]["CANDIDATE_RUN"] == "${{ inputs.candidate_run }}"
+
+
+def test_published_wheels_are_installed_from_the_index_on_every_configuration():
+    jobs = workflow("python-release.yml")["jobs"]
+    job = jobs["index_install"]
+    assert set(job["needs"]) == {"plan", "pypi"} and "if" not in job
+    assert jobs["plan"]["if"] == "inputs.pypi != 'none'"
+    assert job["strategy"]["fail-fast"] == "false"
+    assert job["strategy"]["matrix"] == "${{ fromJSON(needs.plan.outputs.matrix) }}"
+    assert job["runs-on"] == "${{ matrix.os }}"
+    assert job["permissions"] == {"contents": "read", "attestations": "read"}
+    uploads = [step for step in job["steps"] if step.get("uses", "").startswith("actions/upload-artifact@")]
+    assert len(uploads) == 1 and uploads[0]["if"] == "always()"
+    assert uploads[0]["with"]["name"] == ("python-index-install-${{ inputs.pypi }}-${{ matrix.id }}-"
+                                          "${{ github.run_attempt }}")
+    assert uploads[0]["with"]["if-no-files-found"] == "error"
 
 
 def test_release_passes_the_requested_tag_to_every_release_step():

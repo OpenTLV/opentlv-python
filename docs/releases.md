@@ -5,8 +5,9 @@ Every dispatch names the release with the required `tag` input, for example
 `v0.1.0`. By default it produces an attested candidate for that tag. The
 optional `publish_release` input also creates exactly that tag and a GitHub
 Release after verification.
-The optional `pypi` input uploads the verified upload set to TestPyPI or PyPI
-through [Trusted Publishing](#pypi-trusted-publishing); no index credentials are
+The optional `pypi` input stages the verified upload set on TestPyPI, or promotes
+a staged candidate to PyPI without rebuilding it, through
+[Trusted Publishing](#pypi-trusted-publishing); no index credentials are
 stored.
 
 ## Prepare a candidate
@@ -49,7 +50,8 @@ stored.
    baseline and Core lock to the exact run. All three top-level files receive
    GitHub build-provenance attestations before artifact upload.
 
-Rerun all jobs when retrying a candidate or GitHub publication. Earlier attempts'
+Rerun all jobs when retrying a candidate or a GitHub publication without
+promotion. Earlier attempts'
 packages or quality reports are rejected; only a package-index upload retries
 with **Re-run failed jobs** (see [PyPI Trusted Publishing](#pypi-trusted-publishing)). Candidate files retain their tested bytes; assembly does not rebuild
 them. Builds are not bit-for-bit reproducible: the five Python versions of one
@@ -114,14 +116,17 @@ Docs publication and resulting URLs still require end-to-end verification.
 
 ## PyPI Trusted Publishing
 
-Only the `opentlv` distribution is published; `opentlv-core` is not. The
-`pypi` dispatch input selects the index:
+Only the `opentlv` distribution is published; `opentlv-core` is not. A release
+takes two dispatches of the same commit, so PyPI receives the bytes that were
+staged and installed from TestPyPI:
 
-| `pypi` | Effect |
-| --- | --- |
-| `none` (default) | No package-index upload. |
-| `testpypi` | Rehearsal on TestPyPI. Runs after assembly; with `publish_release: false` the tag must still be unused. |
-| `pypi` | Production. Requires `publish_release: true`: preflight rejects the dispatch otherwise, and the job runs only after this run has published the tag and GitHub Release. |
+| Dispatch | Inputs | Effect |
+| --- | --- | --- |
+| Candidate only | `pypi: none` (default) | No package-index upload. `publish_release: true` creates a GitHub Release, which uses up the tag, so that candidate cannot be promoted. |
+| Staging | `pypi: testpypi`, `publish_release: false` | Full CI and assembly build a candidate, the job uploads it to TestPyPI, and every configuration installs it from there. The tag stays unused. |
+| Promotion | `pypi: pypi`, `publish_release: true`, `candidate_run: <staging run ID>` | Builds nothing. Verifies the staged candidate, creates the tag and GitHub Release from it, uploads the same files to PyPI after the `pypi` environment approval, and installs them from PyPI on every configuration. |
+
+Preflight rejects any other combination before Full CI starts.
 
 The `Publish verified Python packages to <index>` job runs in the GitHub
 environment of the same name and is the only job with `id-token: write` besides
@@ -133,12 +138,14 @@ requests, forks and other workflows cannot publish. Before any upload,
 - a manual dispatch of the canonical `python-release.yml` from `main` on the
   official clean checkout, the requested tag against the package version,
   release notes and closed changelog, and the locked attested Core;
-- successful Full and assembly jobs, and for PyPI a successful publisher job
-  whose release has the tag at this commit, the release notes and exactly the
-  candidate's assets;
+- for staging, successful Full and assembly jobs and an unused tag; for PyPI, a
+  successful publisher job whose release has the tag at this commit, the release
+  notes and exactly the candidate's assets;
 - the candidate manifest, `SHA256SUMS`, GitHub attestations and the producing
-  run, as for the GitHub publisher: the candidate must come from this run and
-  its attempt, or an earlier attempt when only failed jobs were re-run;
+  run, as for the GitHub publisher. A staging candidate must come from this run
+  and its attempt, or an earlier attempt when only failed jobs were re-run. A
+  promoted one must come from the `candidate_run` (see
+  [promotion](#promote-the-staged-candidate));
 - each file of the candidate's `dist/` upload set against the manifest, the
   tested configuration's bytes and record, and the package contract: one wheel
   per declared platform tag and one sdist;
@@ -147,19 +154,109 @@ requests, forks and other workflows cannot publish. Before any upload,
 
 The pinned `pypa/gh-action-pypi-publish` then uploads those files with PEP 740
 attestations, never with `skip-existing`. `confirm` waits until the index lists
-exactly the upload set with the same SHA-256 digests and uploads a receipt,
+exactly the upload set with the same SHA-256 digests and a PEP 740 provenance
+for every file, issued to this repository, workflow and environment. It also
+requires the index's metadata to name `opentlv`, this version and
+`requires-python` without any dependency. It then uploads a receipt,
 `python-package-index-<index>-<attempt>`, with the plan.
 
 Index files are immutable, so `prepare` never replaces one: it fails when the
 index lists a file for this version that is not in the upload set or has other
 bytes, and otherwise uploads only the files still missing. To retry a failed
-upload, use **Re-run failed jobs** on the same run. The job then takes this
+upload, use **Re-run failed jobs** on the same run. A staging job then takes this
 run's newest attested candidate, from the attempt that assembled it, so it
 uploads the same bytes and can complete an interrupted upload; the candidate's
 producer must still be this run, and the environment approval is requested
-again. Re-running all jobs rebuilds new bytes, and its preflight rejects a tag
-that already exists, so after a published GitHub Release, or once any file of a
-version is on the index, a different candidate needs a new patch version.
+again. Re-running all jobs of a staging run rebuilds new bytes, which TestPyPI
+then rejects, so once any file of a version is on an index, a different candidate
+needs a new patch version.
+
+### Install from the index
+
+After either upload, `Python index installation / <configuration>` runs on all
+15 configurations. `scripts/ci.py index` installs into a fresh virtualenv, by
+name, from that index alone and with the receipt's hash:
+
+```sh
+pip install --no-cache-dir --index-url https://test.pypi.org/simple/ \
+  --only-binary :all: --require-hashes --report install.json -r requirements.txt
+# requirements.txt: opentlv==<version> --hash=sha256:<this platform's wheel>
+```
+
+pip's report must name that wheel and digest, served from the index's file host.
+The job waits for a new project to reach the index's cached pages. It then runs
+`pip check` and the complete installed suite with the Core corpus of the release
+that the wheel records. It also downloads the sdist that the index serves,
+compares its digest and checks the package contract, without building it. Each
+job uploads `python-index-install-<index>-<configuration>-<attempt>`.
+
+### Install from TestPyPI by hand
+
+`opentlv` has no runtime dependencies, so a wheel installs from TestPyPI alone:
+
+```sh
+python -m pip install --index-url https://test.pypi.org/simple/ --only-binary :all: opentlv==<version>
+```
+
+Do not add `--extra-index-url https://pypi.org/simple/` to this command, and do
+not install the sdist from TestPyPI as is. pip resolves the build requirements
+(`scikit-build-core` and its dependencies) in an isolated environment from the
+same index, and anyone can register those names on TestPyPI, so a build could
+fail or run someone else's code. With two indexes, pip takes the highest version
+from either one. To test the sdist, download it with its hash, install the build
+requirements from PyPI, and build with `--no-build-isolation`, as Full CI does;
+the build also needs [its pinned Core](development/python.md#core-selection).
+
+### Promote the staged candidate
+
+The promotion is the only way to reach PyPI. It rebuilds nothing, so the review
+of a staging run applies to the exact bytes that PyPI receives. Dispatch it from
+`main` with the staging run's ID, while `main` is still at the staging commit:
+any later commit, even a documentation change, requires a new version, because
+TestPyPI already holds the staged bytes. Keep `main` frozen between both
+dispatches, and promote within the artifact retention period of the staging run
+(90 days unless the repository sets otherwise).
+
+Before creating the tag, and again before uploading, the workflow checks:
+
+- that the `candidate_run` is an earlier, completed and successful dispatch of
+  this workflow from `main` at this commit in this repository;
+- its `python-package-index-testpypi-*` receipts, which must all agree and name
+  TestPyPI, this tag, version, commit and run;
+- the candidate attempt that the receipt names: manifest, `SHA256SUMS`, GitHub
+  attestations and the definition hashes of this checkout, with the receipt's
+  files equal to the candidate's upload set;
+- one successful `python-index-install-testpypi-*` record per Full configuration,
+  with this commit, run and definitions, the staged files, its own platform's
+  wheel, the locked attested Core and the complete suite (a re-run of a failed
+  job may come from a later attempt);
+- that TestPyPI still lists exactly those files.
+
+The `pypi` environment then asks for approval, after the tag and GitHub Release
+exist. If the PyPI upload or an installation fails, use **Re-run failed jobs** on
+the promotion: it verifies the staged candidate again and uploads only the files
+still missing. A failed GitHub publication may leave a tag or draft release to
+inspect and recover by hand, as described above.
+
+### Rehearse and review
+
+The first hosted runs are the acceptance of this procedure; local tests mock the
+index and GitHub. After the [one-time configuration](#one-time-configuration):
+
+1. Dispatch staging with the release's `tag`, `pypi: testpypi` and
+   `publish_release: false`, and approve the `testpypi` environment. The run must
+   succeed, including all 15 index installations, without creating a tag.
+2. Compare the project page and the
+   `python-package-index-testpypi-<attempt>` receipt with `dist/` in the candidate.
+3. Check retry and no-overwrite behavior on that version. **Re-run failed jobs**
+   after a failed upload or installation must reuse the same candidate, and a new
+   staging dispatch of the same version must fail in `prepare` with *release a
+   new version* after its Full CI, leaving the staged files unchanged.
+4. Before promoting, dispatch with a wrong `candidate_run` (a failed run, or one
+   of another commit) and confirm that preflight rejects it without creating a tag.
+5. Have a maintainer review the staging run and promote it. Staging uses only
+   TestPyPI and promotion builds nothing, so this review covers the production
+   bytes. The first public release is tracked in #52.
 
 ### One-time configuration
 
@@ -179,8 +276,8 @@ These settings live outside this repository and are made by a maintainer:
    transfer to the `opentlv` organization are tracked in #47.
 3. Create no PyPI API tokens for this project, and remove any that exist.
 
-Still open before the first upload: the TestPyPI rehearsal and handoff (#51)
-and the first public release (#52).
+Still open before the first upload: the hosted rehearsal described in
+[Rehearse and review](#rehearse-and-review) (#51) and the first public release (#52).
 
 Build-tool dependencies currently have bounded/minimum requirements rather than
 a complete environment lock. Exact Core source selection and retained package

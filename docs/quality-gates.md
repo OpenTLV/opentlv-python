@@ -343,7 +343,7 @@ ones therefore fail Full and leave no release candidate.
 The manual [release preparation](releases.md) calls Full with verified Core
 required and assembles only the current run attempt's validated packages.
 Its optional `publish_release` input creates a GitHub release/tag and notifies
-Docs; its `pypi` input uploads the verified upload set from a protected
+Docs; its `pypi` input stages the verified upload set on TestPyPI or promotes a staged one to PyPI from a protected
 environment. See [versioning](versioning.md) for the binding version
 and the separate Core compatibility policy.
 

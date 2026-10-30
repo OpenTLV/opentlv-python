@@ -54,5 +54,6 @@ together, write the versioned
 run source checks and installed-package Full validation, then follow
 [release preparation](releases.md). The initial
 policy accepts stable `MAJOR.MINOR.PATCH` versions. The optional GitHub publisher
-creates `v<version>` only after verified Full CI; PyPI publication of that
-version follows the GitHub Release, as described in the release guide.
+creates `v<version>` only after verified Full CI, or when promoting a candidate
+staged on TestPyPI; PyPI publication of that version follows the GitHub Release
+of the promotion, as described in the release guide.
