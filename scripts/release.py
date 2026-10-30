@@ -11,7 +11,7 @@ import tempfile
 import zipfile
 
 from build_support import ROOT, api, digest, read, require, write
-from ci_contract import REPOSITORY, definition_hashes, identity, matrix, validate_records
+from ci_contract import REPOSITORY, definition_hashes, identity, validate_records
 from package_contract import policy, validate_bundle
 from verified_core import lock
 
@@ -74,39 +74,15 @@ def preflight(tag):
     return result
 
 
-def select_distributions(records):
-    """Choose the unique upload set: one wheel per platform and one sdist.
-
-    Builds are not bit-for-bit reproducible, so every Full configuration produces its own bytes under
-    the same filename. Each platform's build on the stable-ABI floor supplies its wheel, and the first
-    platform's floor build supplies the sdist; all of them are the exact bytes that build tested.
-    """
-    configurations = matrix("full")
-    floor = configurations[0]["python"]
-    selected = {}
-    for record in records:
-        configuration = record["configuration"]
-        if configuration["python"] != floor:
-            continue
-        for relative, sha in record["artifacts"].items():
-            if relative.startswith("wheels/") or configuration["id"] == configurations[0]["id"]:
-                name = relative.split("/")[1]
-                require(name not in selected, "Duplicate distribution filename in the upload set")
-                selected[name] = {"source": configuration["id"] + "/" + relative, "sha256": sha}
-    platforms = {item["system"] for item in configurations}
-    require(sum(name.endswith(".whl") for name in selected) == len(platforms)
-            and sum(name.endswith(".tar.gz") for name in selected) == 1, "Incomplete distribution upload set")
-    return selected
-
-
-def assemble(evidence, quality_path, output, tag):
+def assemble(evidence, verification, quality_path, output, tag):
     current, package, pinned = preflight(tag)
     definitions = definition_hashes()
     require(not output.exists(), "Release output must be fresh")
     paths = sorted(evidence.rglob("record.json"))
     records = [read(path) for path in paths]
+    verifications = [read(path) for path in sorted(verification.rglob("verified.json"))]
     quality = read(quality_path)
-    expected = validate_records(records, "full", current, definitions, quality["checks"], True)
+    expected = validate_records(records, "full", current, definitions, quality["checks"], True, verifications)
     require(quality == expected, "Full quality report differs from this run's package records")
     for path, record in zip(paths, records):
         validate_bundle(path.parent / "ci", record, package)
@@ -127,9 +103,14 @@ def assemble(evidence, quality_path, output, tag):
                 files[target.relative_to(payload).as_posix()] = sha
             write(destination / "record.json", record)
             files[configuration + "/record.json"] = digest(destination / "record.json")
+        for record in verifications:
+            target = payload / record["configuration"]["id"] / "verified.json"
+            write(target, record)
+            files[target.relative_to(payload).as_posix()] = digest(target)
         write(payload / "quality.json", quality)
         files["quality.json"] = digest(payload / "quality.json")
-        distributions = select_distributions(records)
+        # The gate accepted these bytes only after every configuration installed and tested them.
+        distributions = quality["upload"]
         for name, item in distributions.items():
             target = payload / "dist" / name
             target.parent.mkdir(exist_ok=True)
@@ -164,6 +145,7 @@ def main():
     commands.add_parser("preflight")
     prepare = commands.add_parser("assemble")
     prepare.add_argument("--evidence", type=Path, required=True)
+    prepare.add_argument("--verification", type=Path, required=True)
     prepare.add_argument("--quality", type=Path, required=True)
     prepare.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -171,7 +153,7 @@ def main():
         requested_publication()
         preflight(requested_tag())
     else:
-        assemble(args.evidence, args.quality, args.output, requested_tag())
+        assemble(args.evidence, args.verification, args.quality, args.output, requested_tag())
 
 
 if __name__ == "__main__":

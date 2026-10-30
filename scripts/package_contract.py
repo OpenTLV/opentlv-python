@@ -3,6 +3,7 @@
 """One portable distribution, its independent version and validation of the actual package bytes."""
 
 from email.parser import BytesParser
+import hashlib
 import json
 from pathlib import PurePosixPath
 import re
@@ -149,6 +150,13 @@ def check_sdist(path, value):
         require(content("docs/migration/source-inventory.json") ==
                 (ROOT / "docs/migration/source-inventory.json").read_bytes(),
                 "Sdist migration provenance differs")
+
+
+def sdist_payload(path):
+    """Digest every regular file's content; tar timestamps and ownership differ between builds."""
+    with tarfile.open(path) as archive:
+        return {member.name: hashlib.sha256(archive.extractfile(member).read()).hexdigest()
+                for member in archive.getmembers() if member.isfile()}
 
 
 def artifact_names(tier, value, system):

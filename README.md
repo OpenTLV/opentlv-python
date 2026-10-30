@@ -111,7 +111,9 @@ source quality checks. Pushes to `main` run a short build/import/API smoke.
 Manual or reusable Full CI covers CPython 3.11–3.15 on Linux, Windows and macOS,
 including wheel installation from the source distribution. Every tier repairs
 the wheel to its portable tag, rejects bundled external libraries and runs
-`twine check --strict` before installing exactly those bytes.
+`twine check --strict` before installing exactly those bytes. Full then selects
+one wheel per platform and the sdist, and every configuration installs its
+platform's selected wheel by name and runs the installed suite on it.
 
 The stable `Python quality gate` checks all required results and attempt-scoped
 build evidence. Core's own test suites remain disabled. Every tier consumes the

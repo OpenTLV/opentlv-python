@@ -96,6 +96,9 @@ def extract(directory, manifest, package, destination):
             else:
                 check_wheel(path, package, record["core"], expected[name])
             files[name] = sha
+        # The Full gate accepts an upload set only after every configuration installed and tested it.
+        quality = json.loads(archive.read("quality.json"))
+        require(quality.get("upload") == distributions, "Candidate upload set was not verified by Full CI")
     return files
 
 

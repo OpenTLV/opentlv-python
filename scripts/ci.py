@@ -1,23 +1,27 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Marek Cingel
-"""Build and validate the installed Python distribution, or aggregate exact CI evidence."""
+"""Build and validate the installed Python distribution, verify the selected upload set on every
+Full configuration, or aggregate exact CI evidence."""
 
 import argparse
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import platform
+import shutil
 import sys
 import sysconfig
 import time
+from urllib.parse import unquote, urlparse
 import venv
 
 from build_support import ROOT, digest, read, require, run, write
-from ci_contract import (TIERS, definition_hashes, identity, matrix,
-                         validate_dependency, validate_records)
+from ci_contract import (TIERS, definition_hashes, identity, junit_counts, matrix, select_distributions,
+                         validate_dependency, validate_records, validate_suite)
+from core_dependency import corpus as core_corpus
 from verified_core import lock
-from package_contract import (DISTRIBUTION, inspect_artifacts, policy as package_policy,
-                              validate_bundle, wheel_name)
+from package_contract import (DISTRIBUTION, check_sdist, check_wheel, inspect_artifacts,
+                              policy as package_policy, sdist_payload, validate_bundle, wheel_name)
 
 
 def portable(raw, destination, system, platform_tag):
@@ -37,11 +41,11 @@ def portable(raw, destination, system, platform_tag):
         run(sys.executable, "-m", "delvewheel", "repair", "--wheel-dir", destination, raw)
 
 
-def build(args):
+def start(args):
+    """Check the requested configuration against this runner and create its fresh work directory."""
     # Invalidate a previous success before any check/build can fail.
     args.output.unlink(missing_ok=True)
     lock(args.require_release)
-    package = package_policy()
     require(not args.require_release or args.tier == "full", "Release requires Full CI")
     configurations = {item["id"]: item for item in matrix(args.tier)}
     require(args.configuration in configurations, "Configuration is outside this tier")
@@ -52,12 +56,27 @@ def build(args):
     work = args.work.resolve()
     require(not work.exists(), "Use a fresh --work directory; cached evidence is not accepted")
     work.mkdir(parents=True)
-    started = time.monotonic()
     record = {"schema": 1, "tier": args.tier, "configuration": configuration,
               "identity": identity(), "definitions": definition_hashes(),
               "require_release": args.require_release,
               "runtime": {"python": platform.python_version(), "system": platform.system(),
                           "machine": platform.machine()}}
+    return configuration, work, record
+
+
+def runtime(work):
+    """Create a virtualenv isolated from the build environment and source imports."""
+    environment = work / "runtime"
+    # pip --python supports an empty venv even on distributions without ensurepip.
+    venv.EnvBuilder(with_pip=False).create(environment)
+    python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    return python, [sys.executable, "-m", "pip", "--python", python]
+
+
+def build(args):
+    configuration, work, record = start(args)
+    package = package_policy()
+    started = time.monotonic()
     native = work / "native"
     system = configuration["system"]
     platform_tag = package["wheel_platforms"][system]
@@ -85,12 +104,7 @@ def build(args):
     artifacts = inspect_artifacts(work, args.tier, selected, package, system)
     run(sys.executable, "-m", "twine", "check", "--strict", *(work / path for path in artifacts))
     wheel = work / "wheels" / wheel_name(package, system)
-    # Runtime installation is isolated from both the build environment and source imports.
-    environment = work / "runtime"
-    # pip --python supports an empty venv even on distributions without ensurepip.
-    venv.EnvBuilder(with_pip=False).create(environment)
-    python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    pip = [sys.executable, "-m", "pip", "--python", python]
+    python, pip = runtime(work)
     run(*pip, "install", "--no-index", "--no-deps", wheel)
     if args.tier != "main":
         run(*pip, "install", "--no-cache-dir", "pytest>=8,<10")
@@ -107,7 +121,6 @@ def build(args):
                    "package_version": package["version"], "artifacts": artifacts,
                    "seconds": time.monotonic() - started, "status": "success"})
     # Check test completeness before uploading a success record.
-    from ci_contract import junit_counts
     if args.tier != "main":
         require(record["tests"] == junit_counts(work / "pytest.xml"), "Test report changed")
         policy = read(ROOT / "cmake/ci-matrix.json")
@@ -116,6 +129,116 @@ def build(args):
                 and record["query"] == {"fixtures": policy["query_fixtures"],
                                         "checks": policy["query_checks"]},
                 "Binding validation inventory differs")
+    require(record["identity"] == identity() and record["definitions"] == definition_hashes(),
+            "Checkout changed during validation")
+    write(args.output, record)
+
+
+def select(args):
+    """Copy the upload set out of this attempt's Full builds; the gate derives and checks it again."""
+    output = args.output.resolve()
+    require(not output.exists(), "Use a fresh --output directory")
+    current, definitions, package = identity(), definition_hashes(), package_policy()
+    paths = sorted(args.evidence.rglob("record.json"))
+    records = [read(path) for path in paths]
+    directories = {record["configuration"]["id"]: path.parent / "ci" for path, record in zip(paths, records)}
+    require(len(directories) == len(records) and set(directories) == {item["id"] for item in matrix("full")},
+            "Missing or duplicate configuration evidence")
+    for path, record in zip(paths, records):
+        require(record.get("tier") == "full" and record.get("status") == "success"
+                and record.get("identity") == current and record.get("definitions") == definitions
+                and record.get("require_release") is args.require_release,
+                "Build evidence is not from this Full attempt")
+        validate_bundle(path.parent / "ci", record, package)
+    upload = select_distributions(records)
+
+    def located(item):
+        configuration, relative = item["source"].split("/", 1)
+        return directories[configuration] / relative
+
+    # Every configuration rebuilt and tested a wheel from its own sdist; only their archive metadata
+    # may differ from the published one.
+    sdist = next(name for name in upload if name.endswith(".tar.gz"))
+    payload = sdist_payload(located(upload[sdist]))
+    require(all(sdist_payload(directory / "sdists" / sdist) == payload for directory in directories.values()),
+            "Source distributions differ between configurations")
+    (output / "dist").mkdir(parents=True)
+    for name, item in upload.items():
+        shutil.copyfile(located(item), output / "dist" / name)
+        require(digest(output / "dist" / name) == item["sha256"], "Package changed during selection")
+    builds = {record["configuration"]["id"]: record for record in records}
+    write(output / "selection.json", {
+        "schema": 1, "kind": "upload-set", "identity": current, "definitions": definitions,
+        "require_release": args.require_release, "distributions": upload,
+        "core": {name: builds[item["source"].split("/")[0]]["core"]
+                 for name, item in upload.items() if name.endswith(".whl")}})
+
+
+def upload_set(directory, record, package):
+    """Check the downloaded upload set against its selection, this attempt and the package contract."""
+    selection = read(directory / "selection.json")
+    require(selection.get("schema") == 1 and selection.get("kind") == "upload-set"
+            and selection.get("identity") == record["identity"]
+            and selection.get("definitions") == record["definitions"]
+            and selection.get("require_release") is record["require_release"],
+            "Upload set is not from this attempt")
+    systems = {wheel_name(package, system): system for system in package["wheel_platforms"]}
+    sdist = f'{DISTRIBUTION}-{package["version"]}.tar.gz'
+    distributions = selection.get("distributions", {})
+    require(set(distributions) == set(systems) | {sdist} and set(selection.get("core", {})) == set(systems),
+            "Upload set differs from the package policy")
+    files = {path.name: path for path in (directory / "dist").iterdir()}
+    require(set(files) == set(distributions)
+            and all(path.is_file() and digest(path) == distributions[name]["sha256"] for name, path in files.items()),
+            "Upload set differs from its selection")
+    for name, system in systems.items():
+        check_wheel(files[name], package, selection["core"][name], system)
+    check_sdist(files[sdist], package)
+    return selection
+
+
+def installed_wheel(report):
+    """Return the archive and digest that pip's installation report names."""
+    items = report.get("install", [])
+    require(len(items) == 1 and items[0].get("metadata", {}).get("name") == DISTRIBUTION,
+            "pip installed other distributions than opentlv")
+    info = items[0].get("download_info", {})
+    name = unquote(PurePosixPath(urlparse(info.get("url", "")).path).name)
+    return {name: info.get("archive_info", {}).get("hashes", {}).get("sha256")}
+
+
+def verify(args):
+    configuration, work, record = start(args)
+    package = package_policy()
+    started = time.monotonic()
+    upload = args.upload.resolve()
+    selection = upload_set(upload, record, package)
+    wheel = wheel_name(package, configuration["system"])
+    core = selection["core"][wheel]
+    validate_dependency(core, args.require_release)
+    write(work / "core-selection.json", core)
+    corpus = core_corpus(work / "core", core)
+    python, pip = runtime(work)
+    sha = selection["distributions"][wheel]["sha256"]
+    # Install by name, as `pip install opentlv` does from an index: pip has to choose this
+    # platform's wheel for the running interpreter, and the hash admits no other bytes.
+    requirement = work / "requirements.txt"
+    requirement.write_text(f'{DISTRIBUTION}=={package["version"]} --hash=sha256:{sha}\n', encoding="utf-8")
+    run(*pip, "install", "--no-index", "--find-links", upload / "dist", "--only-binary", ":all:",
+        "--require-hashes", "--report", work / "install.json", "-r", requirement)
+    installed = installed_wheel(read(work / "install.json"))
+    require(installed == {wheel: sha}, "pip installed another archive than the selected wheel")
+    run(*pip, "install", "--no-cache-dir", "pytest>=8,<10")
+    run(*pip, "check")
+    report = work / "runtime.json"
+    run(python, "-I", "-B", ROOT / "scripts/check_python.py", "--selection", work / "core-selection.json",
+        "--corpus", corpus, "--output", report, "--junit", work / "pytest.xml", cwd=work)
+    record.update(read(report))
+    record.update({"kind": "upload-verification", "core": core, "installed": installed,
+                   "upload": {name: item["sha256"] for name, item in selection["distributions"].items()},
+                   "seconds": time.monotonic() - started, "status": "success"})
+    require(record["tests"] == junit_counts(work / "pytest.xml"), "Test report changed")
+    validate_suite(record, read(ROOT / "cmake/ci-matrix.json"))
     require(record["identity"] == identity() and record["definitions"] == definition_hashes(),
             "Checkout changed during validation")
     write(args.output, record)
@@ -132,9 +255,23 @@ def main():
     runner.add_argument("--work", type=Path, required=True)
     runner.add_argument("--output", type=Path, required=True)
     runner.add_argument("--require-release", action="store_true")
+    # Only Full builds every platform's wheel, so only Full selects and verifies an upload set.
+    chooser = commands.add_parser("select")
+    chooser.add_argument("--tier", choices=("full",), required=True)
+    chooser.add_argument("--evidence", type=Path, required=True)
+    chooser.add_argument("--output", type=Path, required=True)
+    chooser.add_argument("--require-release", action="store_true")
+    verifier = commands.add_parser("verify")
+    verifier.add_argument("--tier", choices=("full",), required=True)
+    verifier.add_argument("--configuration", required=True)
+    verifier.add_argument("--upload", type=Path, required=True)
+    verifier.add_argument("--work", type=Path, required=True)
+    verifier.add_argument("--output", type=Path, required=True)
+    verifier.add_argument("--require-release", action="store_true")
     gate = commands.add_parser("gate")
     gate.add_argument("--tier", choices=TIERS, required=True)
     gate.add_argument("--evidence", type=Path, required=True)
+    gate.add_argument("--verification", type=Path, required=True)
     gate.add_argument("--output", type=Path, required=True)
     gate.add_argument("--require-release", action="store_true")
     args = parser.parse_args()
@@ -142,6 +279,10 @@ def main():
         print(json.dumps({"include": matrix(args.tier)}, separators=(",", ":")))
     elif args.command == "build":
         build(args)
+    elif args.command == "select":
+        select(args)
+    elif args.command == "verify":
+        verify(args)
     else:
         args.output.unlink(missing_ok=True)
         current = identity()
@@ -150,8 +291,10 @@ def main():
         records = [read(path) for path in sorted(args.evidence.rglob("record.json"))]
         for path in sorted(args.evidence.rglob("record.json")):
             validate_bundle(path.parent / "ci", read(path), package_policy())
+        # Only Full downloads verification evidence.
+        verifications = [read(path) for path in sorted(args.verification.rglob("verified.json"))]
         report = validate_records(records, args.tier, current, definition_hashes(),
-                                  json.loads(os.environ["CHECK_RESULTS"]), args.require_release)
+                                  json.loads(os.environ["CHECK_RESULTS"]), args.require_release, verifications)
         write(args.output, report)
 
 

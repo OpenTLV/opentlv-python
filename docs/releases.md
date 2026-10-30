@@ -32,15 +32,19 @@ stored.
    same workflow run with verified Core required across all 15 existing
    configurations.
    Source quality, CodeQL, installed API tests, examples, Query and package checks
-   must pass. Dependency verification failures stop the build.
+   must pass, and every configuration must install and test the selected upload
+   set ([upload set verification](quality-gates.md#upload-set-verification)).
+   Dependency verification failures stop the build.
 4. Assembly validates the exact repository, dispatch SHA, run ID and attempt,
-   definition hashes, full matrix, quality report and every package checksum.
+   definition hashes, full matrix, upload set verifications, quality report and
+   every package checksum.
    It also opens the packages again to check metadata, platform tags, payload
    and dependency identity. A failure produces no completed candidate.
 5. Download `python-release-candidate-<attempt>` from that run. It contains
    `opentlv-python-<version>.zip`, `manifest.json` and `SHA256SUMS`. The ZIP keeps
-   each configuration's actual tested wheel and sdist, record and shared quality
-   report, plus the upload set in `dist/`. The manifest binds the requested tag,
+   each configuration's actual tested wheel and sdist, build record and
+   `verified.json` upload set verification, the shared quality report, plus the
+   upload set in `dist/`. The manifest binds the requested tag,
    each internal file, the selected `distributions`, the Python policy, migration
    baseline and Core lock to the exact run. All three top-level files receive
    GitHub build-provenance attestations before artifact upload.
@@ -55,6 +59,10 @@ directories, and assembly selects a unique upload set in `dist/`: each platform'
 wheel from its CPython 3.11 configuration (the stable-ABI floor) and the sdist
 from `linux-3.11`. These are copies of the exact bytes those configurations
 installed and tested, with the same SHA-256, and each filename appears once.
+Full CI made the same selection before its gate and installed each wheel on all
+five interpreters of its platform; assembly takes the upload set from the
+accepted quality report, so it publishes no file that a configuration did not
+install and test.
 
 Follow [GitHub's attestation verification instructions](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
 to verify downloaded subjects against `OpenTLV/opentlv-python` and the
@@ -133,7 +141,9 @@ requests, forks and other workflows cannot publish. Before any upload,
   its attempt, or an earlier attempt when only failed jobs were re-run;
 - each file of the candidate's `dist/` upload set against the manifest, the
   tested configuration's bytes and record, and the package contract: one wheel
-  per declared platform tag and one sdist.
+  per declared platform tag and one sdist;
+- that the upload set is the one the candidate's quality report accepted after
+  every Full configuration verified it.
 
 The pinned `pypa/gh-action-pypi-publish` then uploads those files with PEP 740
 attestations, never with `skip-existing`. `confirm` waits until the index lists
@@ -169,8 +179,7 @@ These settings live outside this repository and are made by a maintainer:
    transfer to the `opentlv` organization are tracked in #47.
 3. Create no PyPI API tokens for this project, and remove any that exist.
 
-Still open before the first upload: installation tests of the selected `dist/`
-bytes on every supported host (#50), the TestPyPI rehearsal and handoff (#51)
+Still open before the first upload: the TestPyPI rehearsal and handoff (#51)
 and the first public release (#52).
 
 Build-tool dependencies currently have bounded/minimum requirements rather than

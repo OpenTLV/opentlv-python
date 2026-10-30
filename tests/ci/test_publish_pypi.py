@@ -25,8 +25,8 @@ from test_packages import release_fixture
 
 @pytest.fixture
 def candidate(tmp_path, monkeypatch):
-    evidence, quality, assembled = release_fixture(tmp_path, monkeypatch)
-    release.assemble(evidence, quality, assembled, "v0.1.0")
+    evidence, verification, quality, assembled = release_fixture(tmp_path, monkeypatch)
+    release.assemble(evidence, verification, quality, assembled, "v0.1.0")
     # download-artifact places each attempt's candidate in a directory named after its artifact.
     output = tmp_path / "candidates" / ("python-release-candidate-" + IDENTITY["run_attempt"])
     output.parent.mkdir()
@@ -125,12 +125,20 @@ def rewrite_candidate(output, change):
 
 @pytest.mark.parametrize("mutation,message", [
     ("dist-bytes", "tested build"), ("source-bytes", "tested build"), ("missing-platform", "upload set"),
-    ("foreign-record", "build record"), ("wheel-contract", "native _opentlv")])
+    ("foreign-record", "build record"), ("wheel-contract", "native _opentlv"),
+    ("unverified", "verified by Full CI")])
 def test_candidate_upload_set_is_rechecked_before_upload(candidate, mutation, message):
     output, manifest, _, _, _ = candidate
     name = packages.wheel_name(packages.policy(), "Linux")
     item = manifest["distributions"][name]
-    if mutation == "dist-bytes":
+    if mutation == "unverified":
+        # Tested by its own build, but not the upload set that every configuration installed.
+        def change(contents):
+            quality = json.loads(contents["quality.json"])
+            quality["upload"][name]["sha256"] = "0" * 64
+            contents["quality.json"] = json.dumps(quality).encode()
+        rewrite_candidate(output, change)
+    elif mutation == "dist-bytes":
         rewrite_candidate(output, lambda contents: contents.__setitem__("dist/" + name, b"changed"))
     elif mutation == "source-bytes":
         rewrite_candidate(output, lambda contents: contents.__setitem__(item["source"], b"changed"))

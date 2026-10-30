@@ -213,6 +213,31 @@ def authenticated_release(work, selected):
     return manifest, sums, download, {'release_id': release['id'], 'manifest_sha256': digest(manifest_path)}
 
 
+def corpus_source(manifest, sums, download, destination, commit):
+    """Extract the release's Verified Source, which carries Core's shared Query fixtures."""
+    sources = [r for r in manifest['artifacts'] if r.get('kind') == 'source']
+    require(len(sources) == 1, 'Expected the matching Verified Source corpus')
+    source_record = sources[0]
+    source_archive = download(source_record['filename'])
+    require(digest(source_archive) == source_record['sha256'] == sums.get(source_archive.name),
+            'Core corpus archive checksum mismatch')
+    extract(source_archive, destination)
+    source = destination / ('OpenTLV-' + manifest['version'])
+    require((source / 'opentlv-source.txt').read_text() ==
+            f"version={manifest['version']}\ncommit={commit}\n", 'Wrong corpus identity')
+    return source
+
+
+def verified_corpus(work, selected):
+    """Authenticate the Core corpus of an existing build selection, without resolving Core again."""
+    manifest, sums, download, release_identity = authenticated_release(work, selected)
+    require(release_identity == {key: selected.get(key) for key in ('release_id', 'manifest_sha256')},
+            'Core release differs from the build selection')
+    source = corpus_source(manifest, sums, download, work / 'corpus', selected['commit'])
+    verify_configuration(manifest, source)
+    return source
+
+
 def resolve(work, probe, configuration):
     """Resolve an authenticated static dependency for the actual consumer compiler."""
     selected = lock(True)
@@ -242,16 +267,7 @@ def resolve(work, probe, configuration):
         # Explicit package directory; CMake must not silently fall back to Git.
         location = {'package_dir': str(configs[0].parent.resolve())}
         # The public Query facade consumes shared fixtures even with binary Core.
-        sources = [r for r in manifest['artifacts'] if r.get('kind') == 'source']
-        require(len(sources) == 1, 'Expected the matching Verified Source corpus')
-        source_record = sources[0]
-        source_archive = download(source_record['filename'])
-        require(digest(source_archive) == source_record['sha256'] == sums.get(source_archive.name),
-                'Core corpus archive checksum mismatch')
-        extract(source_archive, work / 'corpus')
-        source = work / 'corpus' / ('OpenTLV-' + manifest['version'])
-        require((source / 'opentlv-source.txt').read_text() ==
-                f"version={manifest['version']}\ncommit={selected['commit']}\n", 'Wrong corpus identity')
+        source = corpus_source(manifest, sums, download, work / 'corpus', selected['commit'])
     verify_configuration(manifest, source)
     evidence = {'mode': mode, 'verified': True, 'version': selected['version'],
                 'repository': REPOSITORY, 'commit': selected['commit'], **location,

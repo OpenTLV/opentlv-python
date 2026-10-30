@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 
 from build_support import read, require, run, write
-from verified_core import REPOSITORY, lock, resolve
+from verified_core import REPOSITORY, lock, resolve, verified_corpus
 
 
 def in_ci():
@@ -64,6 +64,20 @@ def select(work, probe, configuration, source=None, require_release=False):
     return {"mode": "pinned-git", "verified": False, **identity,
             "source_dir": str(source.resolve()), "source_path": str(source.resolve()),
             "repository": REPOSITORY}
+
+
+def corpus(work, selected):
+    """Fetch the Core source of an existing build selection for its shared Query fixtures."""
+    work.mkdir(parents=True, exist_ok=False)
+    if selected["mode"] == "local-source":
+        require(not in_ci(), "Local Core overrides are development-only and forbidden in CI/verified-release builds")
+        return Path(selected["source_path"])
+    if selected["mode"] == "pinned-git":
+        source = work / "source"
+        run("git", "clone", "--no-checkout", f"https://github.com/{REPOSITORY}.git", source)
+        run("git", "-C", source, "checkout", "--detach", selected["commit"])
+        return source
+    return verified_corpus(work / "assets", selected)
 
 
 def main():
