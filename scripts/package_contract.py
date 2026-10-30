@@ -166,6 +166,13 @@ def artifact_names(tier, value, system):
     return names
 
 
+def upload_names(value):
+    """The complete upload set by filename: each wheel's system, and None for the sdist."""
+    names = {wheel_name(value, system): system for system in value["wheel_platforms"]}
+    names[f'{DISTRIBUTION}-{value["version"]}.tar.gz'] = None
+    return names
+
+
 def validate_artifact_record(record, value):
     require(record.get("package_version") == value["version"], "Package version evidence differs")
     require(record.get("package_versions") == {DISTRIBUTION: value["version"]},

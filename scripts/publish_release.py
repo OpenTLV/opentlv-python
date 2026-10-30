@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Marek Cingel
-"""Publish an attested GitHub release after Full CI; never upload to a package index."""
+"""Publish an attested GitHub release after Full CI or from a staged candidate; never upload to a package index."""
 
 import json
 import os
@@ -8,29 +8,66 @@ from pathlib import Path
 import re
 
 from build_support import ROOT, api, digest, read, require, run, write
-from ci_contract import REPOSITORY, definition_hashes
-from release import NOTES, preflight, requested_tag
+from ci_contract import REPOSITORY, definition_hashes, validate_index_installs
+from package_index import index_files
+from release import NOTES, WORKFLOW, preflight, requested_tag, staged_run
 
-WORKFLOW = ".github/workflows/python-release.yml"
+STAGING = "testpypi"
 
 
-def verify(directory, tag):
+def verify(root, tag):
+    """Check this dispatch and return its identity, package and the candidate to release."""
     current, package, pinned = preflight(tag)
     require(os.environ.get("GITHUB_WORKFLOW_REF") == REPOSITORY + "/" + WORKFLOW + "@refs/heads/main",
             "Release publication requires the canonical workflow")
+    promoted = bool(os.environ.get("CANDIDATE_RUN"))
     require(os.environ.get("PUBLISH_RELEASE") == "true" and
-            os.environ.get("FULL_RESULT") == os.environ.get("ASSEMBLE_RESULT") == "success",
+            (promoted or os.environ.get("FULL_RESULT") == os.environ.get("ASSEMBLE_RESULT") == "success"),
             "GitHub publication requires explicit opt-in and successful Full/assembly jobs")
     require(re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", package["version"]),
             "Python releases require a stable package version")
-    verify_candidate(directory, tag, current, package, pinned)
-    return current, package
+    if promoted:
+        root = staged_candidate(root, tag, current, package, pinned)[0]
+    else:
+        verify_candidate(root, tag, current, package, pinned)
+    return current, package, root
 
 
-def verify_candidate(directory, tag, current, package, pinned, latest_attempt=None):
+def staged_candidate(root, tag, current, package, pinned):
+    """Authenticate the earlier staging run's candidate, its TestPyPI receipt and installations.
+
+    `root` holds that run's downloaded artifacts. The run must have the dispatch's commit, so nothing
+    is rebuilt and the bytes that were staged and installed from TestPyPI are the ones promoted.
+    """
+    run_id = os.environ.get("CANDIDATE_RUN", "")
+    require(run_id and run_id != current["run_id"], "Promotion requires an earlier staging run")
+    receipts = [read(path) for path in sorted(root.glob(f"python-package-index-{STAGING}-*/receipt.json"))]
+    require(receipts and all(item == receipts[0] for item in receipts),
+            "Missing or contradictory TestPyPI receipts of the staged candidate")
+    receipt = receipts[0]
+    require(receipt.get("schema") == 1 and receipt.get("kind") == "python-package-index-release"
+            and receipt.get("index") == STAGING and receipt.get("repository") == REPOSITORY
+            and receipt.get("tag") == tag and receipt.get("version") == package["version"]
+            and receipt.get("commit") == current["commit"] and str(receipt.get("run_id")) == run_id,
+            "TestPyPI receipt differs from this promotion")
+    producer = {**current, "run_id": run_id, "run_attempt": str(receipt.get("run_attempt"))}
+    directory = root / ("python-release-candidate-" + producer["run_attempt"])
+    require(directory.is_dir(), "Missing staged release candidate")
+    manifest = verify_candidate(directory, tag, producer, package, pinned, completed=True)
+    files = {name: item["sha256"] for name, item in manifest["distributions"].items()}
+    require(receipt.get("files") == files, "TestPyPI receipt differs from the staged candidate")
+    installs = [read(path) for path in sorted(root.glob(f"python-index-install-{STAGING}-*/indexed.json"))]
+    validate_index_installs(installs, STAGING, files, producer, manifest["definitions"])
+    # Index files are immutable, but a project owner can delete them.
+    require(index_files(STAGING, package["version"]) == files, "TestPyPI no longer lists the staged files")
+    return directory, manifest, producer
+
+
+def verify_candidate(directory, tag, current, package, pinned, latest_attempt=None, completed=False):
     """Authenticate the attested candidate of the `current` run attempt before any remote write.
 
     `latest_attempt` is the run's attempt now executing, when that is a later re-run of failed jobs.
+    `completed` names an earlier run, whose candidate is promoted, instead of the executing one.
     """
     manifest = read(directory / "manifest.json")
     require(manifest.get("schema") == 1 and manifest.get("kind") == "python-release-candidate"
@@ -47,6 +84,11 @@ def verify_candidate(directory, tag, current, package, pinned, latest_attempt=No
         require(path.is_file() and not path.is_symlink(), "Release assets must be regular files")
         run("gh", "attestation", "verify", path, "--repo", REPOSITORY,
             "--signer-workflow", REPOSITORY + "/" + WORKFLOW, "--source-digest", current["commit"])
+    if completed:
+        finished = staged_run(current["run_id"], current["commit"])
+        require(int(finished.get("run_attempt", 0)) >= int(current["run_attempt"]),
+                "Candidate attempt is newer than its run")
+        return manifest
     producer = api(f"repos/{REPOSITORY}/actions/runs/{current['run_id']}")
     require(producer.get("status") == "in_progress" and producer.get("conclusion") is None
             and producer.get("event") == "workflow_dispatch" and producer.get("head_branch") == "main"
@@ -76,8 +118,8 @@ def verify_published(released, directory, tag, commit, draft):
     require(api(f"repos/{REPOSITORY}/commits/{tag}").get("sha") == commit, "Release tag changed")
 
 
-def publish(directory, tag):
-    current, package = verify(directory, tag)
+def publish(root, tag):
+    current, package, directory = verify(root, tag)
     # A verified candidate alone is insufficient: create a tag and a real GitHub release.
     created = json.loads(run("gh", "api", f"repos/{REPOSITORY}/git/refs", "-X", "POST",
                              "-f", "ref=refs/tags/" + tag, "-f", "sha=" + current["commit"], capture=True))
@@ -100,4 +142,4 @@ def publish(directory, tag):
 
 
 if __name__ == "__main__":
-    publish(ROOT / "build/release", requested_tag())
+    publish(ROOT / ("build/candidates" if os.environ.get("CANDIDATE_RUN") else "build/release"), requested_tag())

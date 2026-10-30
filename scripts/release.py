@@ -15,6 +15,7 @@ from ci_contract import REPOSITORY, definition_hashes, identity, validate_record
 from package_contract import policy, validate_bundle
 from verified_core import lock
 
+WORKFLOW = ".github/workflows/python-release.yml"
 NOTES = ROOT / "docs/release-notes.md"
 CHANGELOG = ROOT / "CHANGELOG.md"
 
@@ -27,11 +28,30 @@ def requested_tag():
 
 
 def requested_publication():
-    """Reject a dispatch whose PyPI upload could never run, before Full CI starts."""
+    """Reject a dispatch whose package index step could never run, before Full CI starts."""
     index = os.environ.get("PYPI_TARGET", "none")
+    publish = os.environ.get("PUBLISH_RELEASE") == "true"
+    candidate = os.environ.get("CANDIDATE_RUN", "")
     require(index in ("none", "testpypi", "pypi"), "Unknown package index")
-    require(index != "pypi" or os.environ.get("PUBLISH_RELEASE") == "true",
-            "PyPI publication requires publish_release: true in the same run")
+    require(not candidate or re.fullmatch(r"[1-9][0-9]*", candidate), "candidate_run must be a workflow run ID")
+    if index == "pypi":
+        require(publish and candidate, "PyPI publication promotes a staged candidate: "
+                                       "it requires publish_release: true and candidate_run")
+    else:
+        require(not candidate, "candidate_run promotes a staged candidate to PyPI only: use pypi: pypi")
+    # Staging leaves the tag unused, because promoting the candidate creates it.
+    require(index != "testpypi" or not publish, "TestPyPI staging requires publish_release: false")
+
+
+def staged_run(run_id, commit):
+    """Require a completed, successful dispatch of this workflow from main at this commit."""
+    producer = api(f"repos/{REPOSITORY}/actions/runs/{run_id}")
+    require(producer.get("status") == "completed" and producer.get("conclusion") == "success"
+            and producer.get("event") == "workflow_dispatch" and producer.get("head_branch") == "main"
+            and producer.get("head_sha") == commit and producer.get("path") == WORKFLOW
+            and producer.get("head_repository", {}).get("full_name") == REPOSITORY,
+            "candidate_run is not a successful release run of this commit")
+    return producer
 
 
 def release_text(tag, version):
@@ -151,7 +171,9 @@ def main():
     args = parser.parse_args()
     if args.command == "preflight":
         requested_publication()
-        preflight(requested_tag())
+        current = preflight(requested_tag())[0]
+        if os.environ.get("CANDIDATE_RUN"):
+            staged_run(os.environ["CANDIDATE_RUN"], current["commit"])
     else:
         assemble(args.evidence, args.verification, args.quality, args.output, requested_tag())
 

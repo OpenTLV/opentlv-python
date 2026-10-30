@@ -160,6 +160,42 @@ def validate_verifications(verifications, records, upload, expected_identity, de
             for record in verifications}
 
 
+def validate_index_installs(records, index, files, expected_identity, definitions):
+    """Every Full configuration must have installed the staged files from the index and passed the suite.
+
+    A re-run of failed jobs records another attempt of the same run, so only the attempt may differ.
+    """
+    expected = {item["id"]: item for item in matrix("full")}
+    package = package_policy()
+    policy = read(ROOT / "cmake/ci-matrix.json")
+    same_run = {key: value for key, value in expected_identity.items() if key != "run_attempt"}
+    seen = set()
+    for record in records:
+        name = record.get("configuration", {}).get("id")
+        require(name in expected, "Unexpected package index installation")
+        seen.add(name)
+        require(record.get("schema") == 1 and record.get("kind") == "index-installation"
+                and record.get("index") == index and record.get("tier") == "full"
+                and record.get("status") == "success", "Unsuccessful package index installation")
+        identity_fields = dict(record.get("identity", {}))
+        identity_fields.pop("run_attempt", None)
+        require(identity_fields == same_run, "Wrong repository/commit/run")
+        require(record.get("definitions") == definitions, "CI definitions differ")
+        require(record.get("configuration") == expected[name], "Configuration differs")
+        require(record.get("require_release") is True, "Release policy differs")
+        validate_runtime(record, expected[name])
+        require(record.get("files") == files, "Installed package index files differ from the staged set")
+        wheel = wheel_name(package, expected[name]["system"])
+        require(record.get("installed") == {wheel: files[wheel]},
+                "Configuration did not install its platform's staged wheel")
+        validate_dependency(record.get("core", {}), True)
+        require(record.get("smoke") is True
+                and record.get("package_versions") == {DISTRIBUTION: package["version"]},
+                "Missing installed-package smoke")
+        validate_suite(record, policy)
+    require(seen == set(expected), "Missing package index installation")
+
+
 def validate_records(records, tier, expected_identity, definitions, checks, require_release=False,
                      verifications=()):
     require(tier in TIERS, "Unknown CI tier")
