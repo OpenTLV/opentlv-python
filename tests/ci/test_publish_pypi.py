@@ -17,6 +17,7 @@ from urllib.error import HTTPError
 
 from build_support import read, write
 import package_contract as packages
+import package_index
 import publish_pypi as pypi
 import release
 from test_gate import IDENTITY
@@ -46,6 +47,9 @@ def candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(pypi, "WORK", tmp_path / "pypi")
     index = {}
     monkeypatch.setattr(pypi, "index_files", lambda name, version: dict(index))
+    monkeypatch.setattr(pypi, "provenance", lambda name, version, filename: bundle(name))
+    monkeypatch.setattr(pypi, "index_release", lambda name, version: {"info": {
+        "name": "opentlv", "version": version, "requires_python": ">=3.11", "requires_dist": None}})
     for key, value in {"GITHUB_WORKFLOW_REF": pypi.REPOSITORY + "/" + pypi.WORKFLOW + "@refs/heads/main",
                        "FULL_RESULT": "success", "ASSEMBLE_RESULT": "success", "PUBLISH_RESULT": "skipped",
                        "GITHUB_OUTPUT": str(tmp_path / "github-output")}.items():
@@ -53,11 +57,19 @@ def candidate(tmp_path, monkeypatch):
     return output, manifest, index, calls, tmp_path
 
 
+def bundle(index, **publisher):
+    """The PEP 740 provenance that the index records for a file uploaded by this workflow."""
+    return {"version": 1, "attestation_bundles": [{
+        "publisher": {"kind": "GitHub", "repository": pypi.REPOSITORY, "workflow": "python-release.yml",
+                      "environment": index, **publisher},
+        "attestations": [{"version": 1}]}]}
+
+
 def outputs(tmp_path):
     return dict(line.split("=", 1) for line in (tmp_path / "github-output").read_text().splitlines())
 
 
-def test_testpypi_rehearsal_uploads_the_complete_selected_set(candidate):
+def test_testpypi_staging_uploads_the_complete_selected_set(candidate):
     output, manifest, _, calls, tmp_path = candidate
     pypi.prepare(output.parent, "v0.1.0", "testpypi")
     uploaded = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -70,7 +82,11 @@ def test_testpypi_rehearsal_uploads_the_complete_selected_set(candidate):
 
 
 def test_pypi_requires_the_github_release_of_this_run(candidate, monkeypatch):
-    output, _, _, calls, tmp_path = candidate
+    output, manifest, _, calls, tmp_path = candidate
+    # staged_candidate has its own tests; a promotion runs no Full or assembly job.
+    monkeypatch.setattr(pypi, "staged_candidate", lambda *args: (output, manifest, IDENTITY))
+    monkeypatch.setenv("FULL_RESULT", "skipped")
+    monkeypatch.setenv("ASSEMBLE_RESULT", "skipped")
     with pytest.raises(ValueError, match="GitHub release"):
         pypi.prepare(output.parent, "v0.1.0", "pypi")
     assert not pypi.WORK.exists()
@@ -82,6 +98,7 @@ def test_pypi_requires_the_github_release_of_this_run(candidate, monkeypatch):
 
 @pytest.mark.parametrize("key,value", [("FULL_RESULT", "failure"), ("ASSEMBLE_RESULT", "skipped"),
                                        ("PUBLISH_RESULT", "failure"), ("PUBLISH_RESULT", "cancelled"),
+                                       ("PUBLISH_RESULT", "success"),
                                        ("GITHUB_WORKFLOW_REF", "fork/opentlv-python/.github/workflows/x.yml@refs/heads/main")])
 def test_failed_gate_or_foreign_workflow_never_prepares_an_upload(candidate, monkeypatch, key, value):
     monkeypatch.setenv(key, value)
@@ -181,6 +198,42 @@ def test_confirm_waits_for_the_index_and_records_a_receipt(candidate, monkeypatc
     assert receipt["run_attempt"] == int(IDENTITY["run_attempt"]) and receipt["commit"] == IDENTITY["commit"]
 
 
+@pytest.mark.parametrize("publisher", [{"environment": "pypi"}, {"workflow": "other.yml"},
+                                       {"repository": "fork/opentlv-python"}, {"kind": "GitLab"}])
+def test_confirm_rejects_provenance_from_another_publisher(candidate, monkeypatch, publisher):
+    output, manifest, index, _, _ = candidate
+    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    index.update({name: item["sha256"] for name, item in manifest["distributions"].items()})
+    monkeypatch.setattr(pypi, "provenance", lambda name, version, filename: bundle(name, **publisher))
+    with pytest.raises(ValueError, match="provenance"):
+        pypi.confirm("testpypi", attempts=1, delay=0)
+    assert not (pypi.WORK / "receipt.json").exists()
+
+
+@pytest.mark.parametrize("record", [None, {"attestation_bundles": []}])
+def test_confirm_requires_provenance_for_every_file(candidate, monkeypatch, record):
+    output, manifest, index, _, _ = candidate
+    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    index.update({name: item["sha256"] for name, item in manifest["distributions"].items()})
+    monkeypatch.setattr(pypi, "provenance", lambda name, version, filename: record)
+    with pytest.raises(ValueError, match="provenance"):
+        pypi.confirm("testpypi", attempts=2, delay=0)
+    assert not (pypi.WORK / "receipt.json").exists()
+
+
+@pytest.mark.parametrize("field,value", [("requires_dist", ["opentlv-core==0.1.0"]), ("requires_python", ">=3.12"),
+                                         ("name", "opentlv-core"), ("version", "0.2.0")])
+def test_confirm_rejects_other_index_metadata(candidate, monkeypatch, field, value):
+    output, manifest, index, _, _ = candidate
+    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    index.update({name: item["sha256"] for name, item in manifest["distributions"].items()})
+    info = {"name": "opentlv", "version": "0.1.0", "requires_python": ">=3.11", "requires_dist": None, field: value}
+    monkeypatch.setattr(pypi, "index_release", lambda name, version: {"info": info})
+    with pytest.raises(ValueError, match="metadata"):
+        pypi.confirm("testpypi", attempts=1, delay=0)
+    assert not (pypi.WORK / "receipt.json").exists()
+
+
 @pytest.mark.parametrize("listed,message", [("partial", "complete upload set"), ("different", "differ")])
 def test_confirm_rejects_incomplete_or_different_index_files(candidate, monkeypatch, listed, message):
     output, manifest, _, _, _ = candidate
@@ -195,12 +248,17 @@ def test_confirm_rejects_incomplete_or_different_index_files(candidate, monkeypa
         pypi.confirm("pypi", delay=0)
 
 
-@pytest.mark.parametrize("index,publish,message", [
-    ("none", "false", None), ("testpypi", "false", None), ("pypi", "true", None),
-    ("pypi", "false", "publish_release"), ("pypi", "", "publish_release"), ("other", "true", "Unknown")])
-def test_preflight_rejects_a_pypi_upload_that_could_never_run(monkeypatch, index, publish, message):
+@pytest.mark.parametrize("index,publish,run,message", [
+    ("none", "false", "", None), ("none", "true", "", None), ("testpypi", "false", "", None),
+    ("pypi", "true", "123", None),
+    ("pypi", "false", "123", "publish_release"), ("pypi", "", "123", "publish_release"),
+    ("pypi", "true", "", "candidate_run"), ("pypi", "true", "abc", "run ID"), ("pypi", "true", "0123", "run ID"),
+    ("testpypi", "true", "", "publish_release: false"), ("testpypi", "false", "123", "candidate_run"),
+    ("none", "false", "123", "candidate_run"), ("other", "true", "", "Unknown")])
+def test_preflight_rejects_a_dispatch_that_could_never_run(monkeypatch, index, publish, run, message):
     monkeypatch.setenv("PYPI_TARGET", index)
     monkeypatch.setenv("PUBLISH_RELEASE", publish)
+    monkeypatch.setenv("CANDIDATE_RUN", run)
     if message is None:
         release.requested_publication()
     else:
@@ -218,16 +276,29 @@ def test_publisher_requires_an_explicit_index(monkeypatch, value):
 def test_index_files_reads_the_version_json_and_treats_404_as_unpublished(monkeypatch):
     requested = []
 
-    def urlopen(url, timeout):
+    def urlopen(request, timeout):
+        url = request.full_url
         requested.append(url)
         if "/9.9.9/" in url:
             raise HTTPError(url, 404, "Not Found", {}, None)
         return io.BytesIO(json.dumps({"urls": [
             {"filename": "opentlv-0.1.0.tar.gz", "digests": {"sha256": "a" * 64}}]}).encode())
-    monkeypatch.setattr(pypi, "urlopen", urlopen)
-    assert pypi.index_files("testpypi", "0.1.0") == {"opentlv-0.1.0.tar.gz": "a" * 64}
-    assert pypi.index_files("pypi", "9.9.9") == {}
+    monkeypatch.setattr(package_index, "urlopen", urlopen)
+    assert package_index.index_files("testpypi", "0.1.0") == {"opentlv-0.1.0.tar.gz": "a" * 64}
+    assert package_index.index_files("pypi", "9.9.9") == {}
     assert requested == ["https://test.pypi.org/pypi/opentlv/0.1.0/json", "https://pypi.org/pypi/opentlv/9.9.9/json"]
+
+
+def test_provenance_requests_the_integrity_api(monkeypatch):
+    requested = []
+
+    def urlopen(request, timeout):
+        requested.append((request.full_url, request.get_header("Accept")))
+        return io.BytesIO(json.dumps(bundle("testpypi")).encode())
+    monkeypatch.setattr(package_index, "urlopen", urlopen)
+    assert package_index.provenance("testpypi", "0.1.0", "opentlv-0.1.0.tar.gz") == bundle("testpypi")
+    assert requested == [("https://test.pypi.org/integrity/opentlv/0.1.0/opentlv-0.1.0.tar.gz/provenance",
+                          "application/vnd.pypi.integrity.v1+json")]
 
 
 def test_rerun_of_failed_jobs_uploads_the_earlier_attempts_candidate(candidate, monkeypatch):

@@ -9,14 +9,18 @@ on:
         required: true
         type: string
       publish_release:
-        description: Create the requested tag and GitHub release after Full verification
+        description: Create the requested tag and GitHub release after verification
         type: boolean
         default: false
       pypi:
-        description: Upload the verified packages to testpypi, or to pypi after the GitHub release of this run
+        description: Stage a new candidate on testpypi, or promote a staged candidate to pypi after the GitHub release of this run
         type: choice
         options: [none, testpypi, pypi]
         default: none
+      candidate_run:
+        description: Run ID of the staging run to promote with pypi; nothing is built, and main must still be at its commit
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -25,6 +29,9 @@ concurrency:
 jobs:
   preflight:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -37,9 +44,24 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           PUBLISH_RELEASE: ${{ inputs.publish_release }}
           PYPI_TARGET: ${{ inputs.pypi }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
         run: python -B scripts/release.py preflight
+  plan:
+    needs: preflight
+    if: inputs.pypi != 'none'
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - id: matrix
+        run: echo "value=$(python -B scripts/ci.py matrix --tier full)" >> "$GITHUB_OUTPUT"
   full:
     needs: preflight
+    # A promotion releases the staged candidate instead of building another one.
+    if: inputs.candidate_run == ''
     permissions:
       contents: read
       attestations: read
@@ -50,6 +72,7 @@ jobs:
       require_verified_core: true
   assemble:
     needs: [preflight, full]
+    if: inputs.candidate_run == ''
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -91,8 +114,10 @@ jobs:
           if-no-files-found: error
   publish:
     name: Publish verified Python release
-    needs: [full, assemble]
-    if: inputs.publish_release
+    needs: [preflight, full, assemble]
+    if: >-
+      !cancelled() && inputs.publish_release && needs.preflight.result == 'success' &&
+      (needs.assemble.result == 'success' || inputs.candidate_run != '')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -106,14 +131,25 @@ jobs:
         with:
           python-version: '3.11'
       - uses: actions/download-artifact@v4
+        if: inputs.candidate_run == ''
         with:
           name: python-release-candidate-${{ github.run_attempt }}
           path: build/release
+      - name: Download the staged candidate and its evidence
+        if: inputs.candidate_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+        run: >-
+          gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" --dir build/candidates
+          --pattern 'python-release-candidate-*' --pattern 'python-package-index-testpypi-*'
+          --pattern 'python-index-install-testpypi-*'
       - name: Verify attested candidate and publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
           FULL_RESULT: ${{ needs.full.result }}
           ASSEMBLE_RESULT: ${{ needs.assemble.result }}
         run: python -B scripts/publish_release.py
@@ -124,12 +160,14 @@ jobs:
           if-no-files-found: error
   pypi:
     name: Publish verified Python packages to ${{ inputs.pypi }}
-    needs: [full, assemble, publish]
-    # PyPI follows the GitHub release of this run; a TestPyPI rehearsal may run without it.
+    needs: [preflight, full, assemble, publish]
+    # Staging uploads this run's candidate and leaves the tag unused; PyPI follows the GitHub release
+    # of a promotion, which builds nothing.
     if: >-
-      !cancelled() && inputs.pypi != 'none' &&
-      needs.full.result == 'success' && needs.assemble.result == 'success' &&
-      (needs.publish.result == 'success' || (inputs.pypi == 'testpypi' && needs.publish.result == 'skipped'))
+      !cancelled() && needs.preflight.result == 'success' && (
+      (inputs.pypi == 'testpypi' && needs.full.result == 'success' && needs.assemble.result == 'success' &&
+      needs.publish.result == 'skipped') ||
+      (inputs.pypi == 'pypi' && inputs.candidate_run != '' && needs.publish.result == 'success'))
     runs-on: ubuntu-24.04
     # Protected environments limit deployment to main and require approval; PyPI trusts only this
     # repository, workflow and environment through OIDC, so no index token is stored.
@@ -150,15 +188,26 @@ jobs:
           python-version: '3.11'
       # Re-running only failed jobs keeps the candidate of the attempt that assembled it.
       - uses: actions/download-artifact@v4
+        if: inputs.candidate_run == ''
         with:
           pattern: python-release-candidate-*
           path: build/candidates
+      - name: Download the staged candidate and its evidence
+        if: inputs.candidate_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+        run: >-
+          gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" --dir build/candidates
+          --pattern 'python-release-candidate-*' --pattern 'python-package-index-testpypi-*'
+          --pattern 'python-index-install-testpypi-*'
       - name: Verify the candidate, release state and package index
         id: prepare
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
           PYPI_TARGET: ${{ inputs.pypi }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
           FULL_RESULT: ${{ needs.full.result }}
           ASSEMBLE_RESULT: ${{ needs.assemble.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
@@ -181,4 +230,47 @@ jobs:
           path: |
             build/pypi/plan.json
             build/pypi/receipt.json
+          if-no-files-found: error
+  index_install:
+    name: Python index installation / ${{ matrix.id }}
+    needs: [plan, pypi]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      # Re-running only failed jobs keeps the receipt of the attempt that uploaded.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-package-index-${{ inputs.pypi }}-*
+          path: build/receipts
+      - name: Install the published wheel from the package index and run the installed checks
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYPI_TARGET: ${{ inputs.pypi }}
+          CONFIGURATION: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          python -B scripts/ci.py index --index "$PYPI_TARGET" --configuration "$CONFIGURATION" \
+            --receipts build/receipts --work build/index --output build/indexed.json 2>&1 | tee build/index.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-index-install-${{ inputs.pypi }}-${{ matrix.id }}-${{ github.run_attempt }}
+          path: |
+            build/indexed.json
+            build/index.log
+            build/index/install.json
+            build/index/pytest.xml
           if-no-files-found: error

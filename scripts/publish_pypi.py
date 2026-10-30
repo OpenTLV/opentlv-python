@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Marek Cingel
-"""Stage or publish the verified upload set on TestPyPI or PyPI; never build or replace packages."""
+"""Stage the verified upload set on TestPyPI or promote it to PyPI; never build or replace packages."""
 
 import argparse
 import hashlib
@@ -8,18 +8,15 @@ import json
 import os
 from pathlib import Path
 import time
-from urllib.error import HTTPError
-from urllib.request import urlopen
 import zipfile
 
 from build_support import ROOT, api, read, require, write
 from ci_contract import REPOSITORY
-from package_contract import DISTRIBUTION, check_sdist, check_wheel, wheel_name
-from publish_release import WORKFLOW, verify_candidate, verify_published
+from package_contract import DISTRIBUTION, check_sdist, check_wheel, policy, upload_names
+from package_index import INDEXES, UPLOAD_URLS, index_files, index_release, provenance
+from publish_release import WORKFLOW, staged_candidate, verify_candidate, verify_published
 from release import checked_dispatch, requested_tag, unused_tag
 
-INDEXES = {"testpypi": "https://test.pypi.org", "pypi": "https://pypi.org"}
-UPLOAD_URLS = {"testpypi": "https://test.pypi.org/legacy/", "pypi": "https://upload.pypi.org/legacy/"}
 CANDIDATES = ROOT / "build/candidates"
 WORK = ROOT / "build/pypi"
 
@@ -47,32 +44,32 @@ def select_candidate(root, current):
 
 
 def verify(root, tag, index):
-    """Bind the upload to this run's Full CI, attested candidate and tag state."""
+    """Bind a staging upload to this run's Full CI, or a production upload to the staged candidate."""
     current, package, pinned = checked_dispatch(tag)
-    directory, producer = select_candidate(root, current)
     require(os.environ.get("GITHUB_WORKFLOW_REF") == REPOSITORY + "/" + WORKFLOW + "@refs/heads/main",
             "Package index publication requires the canonical workflow")
-    require(os.environ.get("FULL_RESULT") == os.environ.get("ASSEMBLE_RESULT") == "success",
-            "Package index publication requires successful Full/assembly jobs")
     published = os.environ.get("PUBLISH_RESULT")
-    require(published == "success" or (index == "testpypi" and published == "skipped"),
-            "PyPI requires the GitHub release published by this run")
-    if published == "success":
+    if index == "pypi":
+        require(published == "success", "PyPI requires the GitHub release published by this run")
+        directory, manifest, _ = staged_candidate(root, tag, current, package, pinned)
         # The publisher created the tag and release in this run; both must match this candidate.
         releases = [item for item in api(f"repos/{REPOSITORY}/releases?per_page=100") if item.get("tag_name") == tag]
         require(len(releases) == 1, "Missing or duplicate GitHub release")
         verify_published(api(f"repos/{REPOSITORY}/releases/{releases[0]['id']}"), directory, tag,
                          current["commit"], False)
-    else:
-        # A TestPyPI rehearsal must not claim a tag that another run created.
-        unused_tag(tag)
+        return directory, package, manifest
+    require(os.environ.get("FULL_RESULT") == os.environ.get("ASSEMBLE_RESULT") == "success",
+            "Package index publication requires successful Full/assembly jobs")
+    require(published == "skipped", "TestPyPI staging leaves the tag and GitHub release to the promotion")
+    directory, producer = select_candidate(root, current)
+    # Staging must not claim a tag that another run created.
+    unused_tag(tag)
     return directory, package, verify_candidate(directory, tag, producer, package, pinned, current["run_attempt"])
 
 
 def extract(directory, manifest, package, destination):
     """Copy the selected upload set out of the candidate and recheck every file's bytes and contract."""
-    expected = {wheel_name(package, system): system for system in package["wheel_platforms"]}
-    expected[f'{DISTRIBUTION}-{package["version"]}.tar.gz'] = None
+    expected = upload_names(package)
     distributions = manifest.get("distributions", {})
     require(set(distributions) == set(expected), "Candidate upload set differs from the package policy")
     destination.mkdir(parents=True)
@@ -102,16 +99,28 @@ def extract(directory, manifest, package, destination):
     return files
 
 
-def index_files(index, version):
-    """Return the files the index already holds for this version, by SHA-256."""
-    try:
-        with urlopen(f"{INDEXES[index]}/pypi/{DISTRIBUTION}/{version}/json", timeout=60) as response:
-            release = json.load(response)
-    except HTTPError as error:
-        if error.code == 404:
-            return {}
-        raise
-    return {item["filename"]: item["digests"]["sha256"] for item in release["urls"]}
+def attested(index, version, name):
+    """Whether the index holds this file's provenance; a bundle from any other publisher fails."""
+    record = provenance(index, version, name)
+    if record is None:
+        return False
+    bundles = record.get("attestation_bundles", [])
+    for bundle in bundles:
+        publisher = bundle.get("publisher", {})
+        require(publisher.get("kind") == "GitHub"
+                and str(publisher.get("repository", "")).casefold() == REPOSITORY.casefold()
+                and publisher.get("workflow") == Path(WORKFLOW).name and publisher.get("environment") == index
+                and bundle.get("attestations"),
+                "Package index provenance does not name this workflow and environment: " + name)
+    return bool(bundles)
+
+
+def check_metadata(release, package):
+    """Require the single, dependency-free distribution as the index parsed it."""
+    info = release.get("info", {})
+    require(info.get("name") == DISTRIBUTION and info.get("version") == package["version"]
+            and info.get("requires_python") == package["requires_python"] and not info.get("requires_dist"),
+            "Package index metadata differs from the verified distribution")
 
 
 def prepare(root, tag, index):
@@ -136,19 +145,20 @@ def prepare(root, tag, index):
 
 
 def confirm(index, attempts=10, delay=15):
-    """Require exactly the planned files and bytes on the index, then record a receipt."""
+    """Require exactly the planned files, bytes, metadata and provenance on the index, then record a receipt."""
     plan = read(WORK / "plan.json")
     require(plan["index"] == index, "Package index differs from the plan")
     for attempt in range(attempts):
         existing = index_files(index, plan["version"])
-        if existing == plan["files"]:
-            break
         require(all(plan["files"].get(name) == sha for name, sha in existing.items()),
                 "Package index files differ from the verified upload set")
+        if existing == plan["files"] and all(attested(index, plan["version"], name) for name in existing):
+            break
         if attempt + 1 < attempts:
             time.sleep(delay)
     else:
-        raise ValueError("Package index does not list the complete upload set")
+        raise ValueError("Package index does not list the complete upload set with its provenance")
+    check_metadata(index_release(index, plan["version"]), policy())
     identity = plan["manifest"]
     write(WORK / "receipt.json", {
         "schema": 1, "kind": "python-package-index-release", "index": index, "repository": REPOSITORY,

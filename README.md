@@ -131,9 +131,11 @@ the package version, changelog and release notes. Set `publish_release: true`
 to create that tag and the GitHub Release with the versioned
 [release notes](https://github.com/OpenTLV/opentlv-python/blob/main/docs/release-notes.md) after verification and automatically
 notify the documentation portal. The default
-remains candidate-only. The `pypi` input uploads the same verified files to
-TestPyPI or, after the GitHub Release, to PyPI through Trusted Publishing in a
-protected environment, without stored tokens. Release history is in the
+remains candidate-only. With `pypi: testpypi`, the run stages the verified files
+on TestPyPI and installs them from there on every configuration. A later
+dispatch with `pypi: pypi` and that run's ID in `candidate_run` promotes the same
+bytes, without a rebuild, to a GitHub Release and PyPI. Both upload through
+Trusted Publishing in a protected environment, without stored tokens. Release history is in the
 [changelog](https://github.com/OpenTLV/opentlv-python/blob/main/CHANGELOG.md).
 
 ## License

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Marek Cingel
 """Build and validate the installed Python distribution, verify the selected upload set on every
-Full configuration, or aggregate exact CI evidence."""
+Full configuration, install it from a package index, or aggregate exact CI evidence."""
 
 import argparse
 import json
@@ -9,6 +9,7 @@ import os
 from pathlib import Path, PurePosixPath
 import platform
 import shutil
+import subprocess
 import sys
 import sysconfig
 import time
@@ -21,7 +22,11 @@ from ci_contract import (TIERS, definition_hashes, identity, junit_counts, matri
 from core_dependency import corpus as core_corpus
 from verified_core import lock
 from package_contract import (DISTRIBUTION, check_sdist, check_wheel, inspect_artifacts,
-                              policy as package_policy, sdist_payload, validate_bundle, wheel_name)
+                              policy as package_policy, sdist_payload, upload_names, validate_bundle, wheel_name)
+from package_index import FILE_HOSTS, INDEXES, download, index_release
+
+INDEX_ATTEMPTS = 10
+INDEX_DELAY = 30
 
 
 def portable(raw, destination, system, platform_tag):
@@ -182,18 +187,20 @@ def upload_set(directory, record, package):
             and selection.get("definitions") == record["definitions"]
             and selection.get("require_release") is record["require_release"],
             "Upload set is not from this attempt")
-    systems = {wheel_name(package, system): system for system in package["wheel_platforms"]}
-    sdist = f'{DISTRIBUTION}-{package["version"]}.tar.gz'
+    names = upload_names(package)
+    wheels = {name for name, system in names.items() if system}
     distributions = selection.get("distributions", {})
-    require(set(distributions) == set(systems) | {sdist} and set(selection.get("core", {})) == set(systems),
+    require(set(distributions) == set(names) and set(selection.get("core", {})) == wheels,
             "Upload set differs from the package policy")
     files = {path.name: path for path in (directory / "dist").iterdir()}
     require(set(files) == set(distributions)
             and all(path.is_file() and digest(path) == distributions[name]["sha256"] for name, path in files.items()),
             "Upload set differs from its selection")
-    for name, system in systems.items():
-        check_wheel(files[name], package, selection["core"][name], system)
-    check_sdist(files[sdist], package)
+    for name, system in names.items():
+        if system:
+            check_wheel(files[name], package, selection["core"][name], system)
+        else:
+            check_sdist(files[name], package)
     return selection
 
 
@@ -207,6 +214,33 @@ def installed_wheel(report):
     return {name: info.get("archive_info", {}).get("hashes", {}).get("sha256")}
 
 
+def install_command(pip, work, version, sha, *source):
+    """Install by name, as `pip install opentlv` does: pip has to choose this platform's wheel for the
+    running interpreter, and the hash admits no other bytes."""
+    requirement = work / "requirements.txt"
+    requirement.write_text(f"{DISTRIBUTION}=={version} --hash=sha256:{sha}\n", encoding="utf-8")
+    return [*pip, "install", *source, "--only-binary", ":all:", "--require-hashes",
+            "--report", work / "install.json", "-r", requirement]
+
+
+def installed_suite(args, work, record, python, pip, core, started, **evidence):
+    """Run the complete installed checks on the wheel in this environment and record their success."""
+    write(work / "core-selection.json", core)
+    corpus = core_corpus(work / "core", core)
+    run(*pip, "install", "--no-cache-dir", "pytest>=8,<10")
+    run(*pip, "check")
+    report = work / "runtime.json"
+    run(python, "-I", "-B", ROOT / "scripts/check_python.py", "--selection", work / "core-selection.json",
+        "--corpus", corpus, "--output", report, "--junit", work / "pytest.xml", cwd=work)
+    record.update(read(report))
+    record.update({"core": core, "seconds": time.monotonic() - started, "status": "success", **evidence})
+    require(record["tests"] == junit_counts(work / "pytest.xml"), "Test report changed")
+    validate_suite(record, read(ROOT / "cmake/ci-matrix.json"))
+    require(record["identity"] == identity() and record["definitions"] == definition_hashes(),
+            "Checkout changed during validation")
+    write(args.output, record)
+
+
 def verify(args):
     configuration, work, record = start(args)
     package = package_policy()
@@ -216,32 +250,69 @@ def verify(args):
     wheel = wheel_name(package, configuration["system"])
     core = selection["core"][wheel]
     validate_dependency(core, args.require_release)
-    write(work / "core-selection.json", core)
-    corpus = core_corpus(work / "core", core)
     python, pip = runtime(work)
     sha = selection["distributions"][wheel]["sha256"]
-    # Install by name, as `pip install opentlv` does from an index: pip has to choose this
-    # platform's wheel for the running interpreter, and the hash admits no other bytes.
-    requirement = work / "requirements.txt"
-    requirement.write_text(f'{DISTRIBUTION}=={package["version"]} --hash=sha256:{sha}\n', encoding="utf-8")
-    run(*pip, "install", "--no-index", "--find-links", upload / "dist", "--only-binary", ":all:",
-        "--require-hashes", "--report", work / "install.json", "-r", requirement)
+    run(*install_command(pip, work, package["version"], sha, "--no-index", "--find-links", upload / "dist"))
     installed = installed_wheel(read(work / "install.json"))
     require(installed == {wheel: sha}, "pip installed another archive than the selected wheel")
-    run(*pip, "install", "--no-cache-dir", "pytest>=8,<10")
-    run(*pip, "check")
-    report = work / "runtime.json"
-    run(python, "-I", "-B", ROOT / "scripts/check_python.py", "--selection", work / "core-selection.json",
-        "--corpus", corpus, "--output", report, "--junit", work / "pytest.xml", cwd=work)
-    record.update(read(report))
-    record.update({"kind": "upload-verification", "core": core, "installed": installed,
-                   "upload": {name: item["sha256"] for name, item in selection["distributions"].items()},
-                   "seconds": time.monotonic() - started, "status": "success"})
-    require(record["tests"] == junit_counts(work / "pytest.xml"), "Test report changed")
-    validate_suite(record, read(ROOT / "cmake/ci-matrix.json"))
-    require(record["identity"] == identity() and record["definitions"] == definition_hashes(),
-            "Checkout changed during validation")
-    write(args.output, record)
+    installed_suite(args, work, record, python, pip, core, started, kind="upload-verification", installed=installed,
+                    upload={name: item["sha256"] for name, item in selection["distributions"].items()})
+
+
+def index_receipt(directory, index, record, package):
+    """Return the files that this run's upload confirmed on the index; a re-run reuses its receipt."""
+    receipts = [read(path) for path in sorted(directory.glob("*/receipt.json"))]
+    require(receipts and all(item == receipts[0] for item in receipts),
+            "Missing or contradictory package index receipts")
+    receipt = receipts[0]
+    require(receipt.get("schema") == 1 and receipt.get("kind") == "python-package-index-release"
+            and receipt.get("index") == index and receipt.get("repository") == record["identity"]["repository"]
+            and receipt.get("commit") == record["identity"]["commit"] and receipt.get("version") == package["version"]
+            and set(receipt.get("files", {})) == set(upload_names(package)),
+            "Package index receipt differs from this installation")
+    return receipt["files"]
+
+
+def install_from_index(command, attempts=INDEX_ATTEMPTS, delay=INDEX_DELAY):
+    """A project's first upload can take minutes to reach the index's cached simple page."""
+    for attempt in range(attempts):
+        try:
+            return run(*command)
+        except subprocess.CalledProcessError:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(delay)
+
+
+def index_install(args):
+    """Install the published wheel into a fresh environment from the index alone and run the suite on it."""
+    args.tier, args.require_release = "full", True
+    configuration, work, record = start(args)
+    package = package_policy()
+    started = time.monotonic()
+    files = index_receipt(args.receipts, args.index, record, package)
+    wheel = wheel_name(package, configuration["system"])
+    python, pip = runtime(work)
+    # No second index: opentlv has no dependencies, and a dependency name on another index could be anyone's.
+    install_from_index(install_command(pip, work, package["version"], files[wheel], "--no-cache-dir",
+                                       "--index-url", INDEXES[args.index] + "/simple/"))
+    report = read(work / "install.json")
+    installed = installed_wheel(report)
+    require(installed == {wheel: files[wheel]}, "pip installed another archive than the published wheel")
+    require(urlparse(report["install"][0]["download_info"]["url"]).hostname == FILE_HOSTS[args.index],
+            "pip installed the wheel from another host than the package index")
+    # The hash binds these bytes to the receipt, and the wheel records the Core it was built with.
+    core = read(next(python.parents[1].rglob("_opentlv_core_dependency.json")))
+    validate_dependency(core, True)
+    # Building the sdist needs the build requirements, which TestPyPI cannot be trusted to supply,
+    # and Full already rebuilt these files; check the bytes that the index serves.
+    sdist = next(name for name, system in upload_names(package).items() if system is None)
+    served = {item["filename"]: item["url"] for item in index_release(args.index, package["version"])["urls"]}
+    download(served[sdist], work / sdist)
+    require(digest(work / sdist) == files[sdist], "The index serves another sdist than the published one")
+    check_sdist(work / sdist, package)
+    installed_suite(args, work, record, python, pip, core, started, kind="index-installation", index=args.index,
+                    files=files, installed=installed)
 
 
 def main():
@@ -268,6 +339,12 @@ def main():
     verifier.add_argument("--work", type=Path, required=True)
     verifier.add_argument("--output", type=Path, required=True)
     verifier.add_argument("--require-release", action="store_true")
+    installer = commands.add_parser("index")
+    installer.add_argument("--index", choices=tuple(INDEXES), required=True)
+    installer.add_argument("--configuration", required=True)
+    installer.add_argument("--receipts", type=Path, required=True)
+    installer.add_argument("--work", type=Path, required=True)
+    installer.add_argument("--output", type=Path, required=True)
     gate = commands.add_parser("gate")
     gate.add_argument("--tier", choices=TIERS, required=True)
     gate.add_argument("--evidence", type=Path, required=True)
@@ -283,6 +360,8 @@ def main():
         select(args)
     elif args.command == "verify":
         verify(args)
+    elif args.command == "index":
+        index_install(args)
     else:
         args.output.unlink(missing_ok=True)
         current = identity()
