@@ -17,6 +17,7 @@ from build_support import digest, write
 def candidate(tmp_path, monkeypatch):
     current = {"repository": release.REPOSITORY, "commit": "a" * 40, "run_id": "123", "run_attempt": "2",
                "hosted": True, "dirty": False}
+    # A self-contained candidate: the publisher reads this package, not the committed policy.
     package = {"version": "0.1.0"}
     pinned = {"release_tag": "v0.7.0"}
     definitions = {"script.py": "b" * 64}

@@ -20,7 +20,7 @@ import package_contract as packages
 import package_index
 import publish_pypi as pypi
 import release
-from test_gate import IDENTITY, OTHER_VERSION, TAG, VERSION
+from test_gate import IDENTITY, LEGACY_DEPENDENCY, OTHER_VERSION, TAG, VERSION
 from test_packages import release_fixture
 
 
@@ -124,7 +124,7 @@ def test_index_with_other_files_for_the_version_is_never_overwritten(candidate, 
     if change == "bytes":
         index[name] = "0" * 64
     else:
-        index["opentlv-0.1.0-cp311-abi3-manylinux_2_17_x86_64.whl"] = "1" * 64
+        index[f"opentlv-{VERSION}-cp311-abi3-manylinux_2_17_x86_64.whl"] = "1" * 64
     with pytest.raises(ValueError, match="new version"):
         pypi.prepare(output.parent, TAG, "testpypi")
     assert not (pypi.WORK / "upload").exists()
@@ -221,7 +221,7 @@ def test_confirm_requires_provenance_for_every_file(candidate, monkeypatch, reco
     assert not (pypi.WORK / "receipt.json").exists()
 
 
-@pytest.mark.parametrize("field,value", [("requires_dist", ["opentlv-core==0.1.0"]), ("requires_python", ">=3.12"),
+@pytest.mark.parametrize("field,value", [("requires_dist", [LEGACY_DEPENDENCY]), ("requires_python", ">=3.12"),
                                          ("name", "opentlv-core"), ("version", OTHER_VERSION)])
 def test_confirm_rejects_other_index_metadata(candidate, monkeypatch, field, value):
     output, manifest, index, _, _ = candidate
@@ -273,6 +273,7 @@ def test_publisher_requires_an_explicit_index(monkeypatch, value):
         pypi.requested_index()
 
 
+# The index client tests pass their own version, independently of the committed policy.
 def test_index_files_reads_the_version_json_and_treats_404_as_unpublished(monkeypatch):
     requested = []
 

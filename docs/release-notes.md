@@ -1,6 +1,6 @@
 # OpenTLV Python v0.2.0
 
-First release on PyPI: one distribution, `opentlv`, now carries both the native
+First release for PyPI: one distribution, `opentlv`, now carries both the native
 `_opentlv` extension and the public `opentlv` package, and has no dependencies.
 The separate `opentlv-core` distribution of v0.1.0 is discontinued and is not
 published. Imports, the public API and the Core lock are unchanged from v0.1.0.
@@ -28,9 +28,10 @@ python -m pip install opentlv
   `cp311-abi3` wheel CPython 3.11 to 3.14 could not import.
 - Every Full CI configuration, CPython 3.11 to 3.15 on Linux, Windows and
   macOS, installs and tests the exact files of the upload set by name and
-  hash. The same files were staged on TestPyPI and installed from there on
-  every configuration before this release promoted them, without a rebuild, to
-  PyPI through Trusted Publishing with PEP 740 provenance.
+  hash. The release workflow stages those files on TestPyPI and installs them
+  from there on every configuration. Only a successful staging run can be
+  promoted: the promotion uploads the same files, without a rebuild, to PyPI
+  through Trusted Publishing with PEP 740 provenance.
 - Distributes `opentlv-python-0.2.0.zip`, its `manifest.json` and `SHA256SUMS`
   with GitHub build-provenance attestations. See
   [release preparation](https://github.com/OpenTLV/opentlv-python/blob/v0.2.0/docs/releases.md)

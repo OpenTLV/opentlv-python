@@ -20,7 +20,7 @@ import package_contract as packages
 from package_contract import DISTRIBUTION
 import publish_release
 import release
-from test_gate import IDENTITY, OTHER_VERSION, TAG, VERSION
+from test_gate import IDENTITY, LEGACY_VERSION, OTHER_VERSION, TAG, VERSION
 from test_packages import PREFIX, metadata, release_fixture, write_sdist
 
 STAGING_RUN = IDENTITY["run_id"]
@@ -186,7 +186,7 @@ def test_promotion_authenticates_the_candidate(staged, monkeypatch):
     (("definitions",), {"x": "0" * 64}, "definitions"), (("runtime", "python"), "3.9.1", "Runtime"),
     (("require_release",), False, "Release policy"), (("files", SDIST), "0" * 64, "staged set"),
     (("installed",), {SDIST: "0" * 64}, "staged wheel"), (("core", "commit"), "f" * 40, "Core"),
-    (("smoke",), False, "smoke"), (("package_versions", "opentlv-core"), "0.1.0", "smoke"),
+    (("smoke",), False, "smoke"), (("package_versions", "opentlv-core"), LEGACY_VERSION, "smoke"),
     (("tests", "tests"), 1, "test suite"), (("examples",), 1, "examples"), (("query", "checks"), 1, "Query")])
 def test_promotion_rejects_incomplete_or_foreign_installations(staged, path, value, message):
     root, _, manifest, _, _, _ = staged

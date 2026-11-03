@@ -18,6 +18,9 @@ from package_contract import DISTRIBUTION, artifact_names, policy as package_pol
 VERSION = package_policy()["version"]
 TAG = "v" + VERSION
 OTHER_VERSION = "9.9.9"
+# Negative fixtures: the two distributions of the GitHub release v0.1.0 must never return.
+LEGACY_VERSION = "0.1.0"
+LEGACY_DEPENDENCY = "opentlv-core==" + LEGACY_VERSION
 IDENTITY = {"repository": contract.REPOSITORY, "commit": "a" * 40, "run_id": "100",
             "run_attempt": "2", "hosted": True, "dirty": False}
 DEFINITIONS = {"scripts/ci.py": "b" * 64}
@@ -108,8 +111,8 @@ def test_complete_gate(tier):
     (("query", "fixtures"), 170), (("packaging",), "none"), (("smoke",), False),
     (("wheels", "opentlv"), "bad"), (("wheels", "opentlv-core"), "d" * 64), (("require_release",), True),
     (("package_version",), "0.7.1"), (("package_versions", "opentlv"), OTHER_VERSION),
-    (("package_versions", "opentlv-core"), "0.1.0"), (("artifacts",), {}),
-    (("artifacts", "wheels/opentlv-0.1.0-cp311-abi3-linux_x86_64.whl"), "c" * 64),
+    (("package_versions", "opentlv-core"), LEGACY_VERSION), (("artifacts",), {}),
+    (("artifacts", f"wheels/opentlv-{VERSION}-cp311-abi3-linux_x86_64.whl"), "c" * 64),
     (("compiler", "SYSTEM"), "Windows"), (("compiler", "COMPILER_ID"), ""),
     (("compiler", "CROSS_COMPILING"), "TRUE"),
 ])

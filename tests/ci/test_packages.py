@@ -19,7 +19,8 @@ import ci_contract
 import package_contract as packages
 from package_contract import DISTRIBUTION
 import release
-from test_gate import IDENTITY, OTHER_VERSION, TAG, VERSION, checks, null_lock, records, verifications
+from test_gate import (IDENTITY, LEGACY_DEPENDENCY, OTHER_VERSION, TAG, VERSION, checks, null_lock, records,
+                       verifications)
 
 PREFIX = DISTRIBUTION + "-" + packages.policy()["version"]
 
@@ -209,7 +210,7 @@ def test_sdist_requires_license_text(tmp_path):
     (f"Version: {VERSION}".encode(), b"Version: 0.7.1"),
     (b"Name: opentlv", b"Name: opentlv-core"),
     (b"Requires-Python: >=3.11", b"Requires-Python: >=3.12"),
-    (b"Requires-Python: >=3.11\n", b"Requires-Python: >=3.11\nRequires-Dist: opentlv-core==0.1.0\n"),
+    (b"Requires-Python: >=3.11\n", f"Requires-Python: >=3.11\nRequires-Dist: {LEGACY_DEPENDENCY}\n".encode()),
     (b"License-Expression: MIT", b"License-Expression: Apache-2.0"),
     (b"License-File: LICENSE\n", b""),
 ])
@@ -234,7 +235,7 @@ def test_source_policy_drift(tmp_path, mutation):
         project.write_text({
             "version": text.replace(f'version = "{VERSION}"', f'version = "{OTHER_VERSION}"'),
             "dependency": text.replace('license-files = ["LICENSE"]\n',
-                                       'license-files = ["LICENSE"]\ndependencies = ["opentlv-core==0.1.0"]\n'),
+                                       f'license-files = ["LICENSE"]\ndependencies = ["{LEGACY_DEPENDENCY}"]\n'),
             "license": text.replace('license = "MIT"', 'license = "Apache-2.0"'),
             "license-files": text.replace('license-files = ["LICENSE"]\n', ""),
             "packages": text.replace('wheel.packages = ["src/opentlv"]', "wheel.packages = []")}[mutation])
@@ -425,6 +426,8 @@ def test_committed_release_notes_and_changelog_match_requested_tag():
         release.release_text("v9.9.9", version)
 
 
+# The tag syntax, release text and remote tag checks below pass their own version and files, so they keep
+# 0.1.0 independently of the committed policy.
 @pytest.mark.parametrize("tag", ["", "0.1.0", "v0.1", "v0.1.0.0", "v01.1.0", "v0.1.0-rc.1", "V0.1.0",
                                  " v0.1.0", "v0.1.0\n", "refs/tags/v0.1.0"])
 def test_release_text_rejects_malformed_tag(tag):
