@@ -39,7 +39,7 @@ python -m venv .venv
 python -m pip install .
 ```
 
-The package version is `0.2.0`; `opentlv.__version__` and
+The package version is `0.2.1`; `opentlv.__version__` and
 `_opentlv.version_string()` report this Python binding version. Python
 releases are independent of Core. See [versioning](https://github.com/OpenTLV/opentlv-python/blob/main/docs/versioning.md).
 
@@ -139,7 +139,7 @@ CI retains the tested wheels and source distributions alongside their checksums
 and build records. The manual [release preparation](https://github.com/OpenTLV/opentlv-python/blob/main/docs/releases.md) runs
 verified-Core Full CI and assembles an attested candidate with a manifest,
 `SHA256SUMS` and a unique upload set of one wheel per platform and one sdist
-for the requested `tag` input, such as `v0.2.0`, which must match
+for the requested `tag` input, such as `v0.2.1`, which must match
 the package version, changelog and release notes. Set `publish_release: true`
 to create that tag and the GitHub Release with the versioned
 [release notes](https://github.com/OpenTLV/opentlv-python/blob/main/docs/release-notes.md) after verification and automatically

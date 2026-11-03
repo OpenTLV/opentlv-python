@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] - 2026-11-03
+
+### Changed
+
+- Prepare `0.2.1` for a new TestPyPI staging run. The 0.2.0 files on TestPyPI are immutable, and since the index installation fix moved `main` past their staging commit, that run can no longer be promoted; a new staging run builds new bytes, which TestPyPI rejects for 0.2.0. The package policy and `pyproject.toml` move to `0.2.1` with the same Core `v0.8.0` lock and public API. `docs/release-notes.md` describes v0.2.1 as the first PyPI release and 0.2.0 as staged on TestPyPI only and not released, the README, release guide, development guide, versioning page and the `tag` input description name the new version, and this changelog section is closed for the version. (#51)
 
 ### Fixed
 
