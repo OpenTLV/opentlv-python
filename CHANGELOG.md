@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-03
 
 ### Added
 
@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Describe the TestPyPI staging and the promotion in the v0.2.0 release notes as the gates of the release workflow, instead of reporting them as done before they have run. The CI tests name their remaining version fixtures: `LEGACY_VERSION` and `LEGACY_DEPENDENCY` for the two-distribution v0.1.0 packages that must never return, the committed `VERSION` for the extra index, artifact and upload-set files of this version, and comments mark the tests that pass their own version independently of the policy. (#51)
+- Prepare `0.2.0`, the first release on PyPI, for the TestPyPI staging rehearsal. Tag `v0.1.0` is already a GitHub Release, and staging requires an unused tag. The package policy and `pyproject.toml` move to `0.2.0` with the same Core `v0.8.0` lock; `docs/release-notes.md` describes the single `opentlv` distribution, its portable wheels, the staged and promoted bytes and how to replace the v0.1.0 packages, and this changelog section is closed for the version. Since promotion rebuilds nothing, the README that becomes the PyPI project page now documents `pip install opentlv` and the sdist toolchain instead of saying that the package is not on PyPI. The release, promotion, publisher, gate and package tests take the committed version and tag from `cmake/python-package.json` and use `9.9.9` as the foreign version, instead of hard-coding `0.1.0` and `0.2.0`, so a version bump no longer breaks their fixtures. (#51)
 - Package the binding as one distribution, `opentlv`, without dependencies. The root `pyproject.toml` is the only build entry point: it installs the native `_opentlv` from `native/` next to the public `opentlv` package from `src/opentlv`, so `src/pyproject.toml`, the `src/LICENSE` copy and the `opentlv-core` distribution are removed; imports, API and version `0.1.0` are unchanged, and one sdist rebuilds the complete package. `cmake/python-package.json` declares one portable tag per CI system, and CI repairs each `cp311-abi3` wheel to `manylinux_2_28_x86_64` with auditwheel, `macosx_11_0_arm64` with delocate (building the extension and Core for macOS 11.0) or `win_amd64` with delvewheel. The package checks reject any bundled external library, `twine check --strict` validates the metadata and README, and CI installs and tests exactly the repaired bytes; the installed checks require both modules to come from `opentlv` and no `opentlv-core` to be installed. Release assembly selects a unique upload set in `dist/`: one wheel per platform from its CPython 3.11 build and the sdist from `linux-3.11`, recorded with their SHA-256 and source configuration in the manifest. The README uses absolute links so that it also renders as the package page. PyPI publication remains disabled. (#48)
 
 ### Fixed

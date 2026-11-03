@@ -20,7 +20,7 @@ import package_contract as packages
 from package_contract import DISTRIBUTION
 import publish_release
 import release
-from test_gate import IDENTITY
+from test_gate import IDENTITY, LEGACY_VERSION, OTHER_VERSION, TAG, VERSION
 from test_packages import PREFIX, metadata, release_fixture, write_sdist
 
 STAGING_RUN = IDENTITY["run_id"]
@@ -40,7 +40,7 @@ def suite():
 def staged(tmp_path, monkeypatch):
     """A successful staging run's downloaded artifacts, and the promotion run's view of them."""
     evidence, verification, quality, assembled = release_fixture(tmp_path, monkeypatch)
-    release.assemble(evidence, verification, quality, assembled, "v0.1.0")
+    release.assemble(evidence, verification, quality, assembled, TAG)
     root = tmp_path / "candidates"
     root.mkdir()
     shutil.move(assembled, root / ("python-release-candidate-" + IDENTITY["run_attempt"]))
@@ -49,8 +49,8 @@ def staged(tmp_path, monkeypatch):
     files = {name: item["sha256"] for name, item in manifest["distributions"].items()}
     write(root / "python-package-index-testpypi-2/receipt.json", {
         "schema": 1, "kind": "python-package-index-release", "index": "testpypi",
-        "repository": publish_release.REPOSITORY, "project": "https://test.pypi.org/project/opentlv/0.1.0/",
-        "tag": "v0.1.0", "version": "0.1.0", "commit": IDENTITY["commit"], "run_id": int(STAGING_RUN),
+        "repository": publish_release.REPOSITORY, "project": f"https://test.pypi.org/project/opentlv/{VERSION}/",
+        "tag": TAG, "version": VERSION, "commit": IDENTITY["commit"], "run_id": int(STAGING_RUN),
         "run_attempt": int(IDENTITY["run_attempt"]), "files": files})
     core = read(evidence / "linux-3.11/record.json")["core"]
     for item in contract.matrix("full"):
@@ -74,7 +74,7 @@ def staged(tmp_path, monkeypatch):
 
 
 def promote(root, manifest):
-    return publish_release.staged_candidate(root, "v0.1.0", CURRENT, packages.policy(), manifest["core_lock"])
+    return publish_release.staged_candidate(root, TAG, CURRENT, packages.policy(), manifest["core_lock"])
 
 
 def test_promotion_returns_the_staged_candidate_of_the_earlier_run(staged):
@@ -93,10 +93,10 @@ def test_github_publication_of_a_promotion_needs_no_build_in_this_run(staged, mo
     monkeypatch.setenv("PUBLISH_RELEASE", "true")
     monkeypatch.setenv("FULL_RESULT", "skipped")
     monkeypatch.setenv("ASSEMBLE_RESULT", "skipped")
-    assert publish_release.verify(root, "v0.1.0") == (CURRENT, package, directory)
+    assert publish_release.verify(root, TAG) == (CURRENT, package, directory)
     monkeypatch.setenv("PUBLISH_RELEASE", "false")
     with pytest.raises(ValueError, match="opt-in"):
-        publish_release.verify(root, "v0.1.0")
+        publish_release.verify(root, TAG)
 
 
 def receipt_path(root):
@@ -104,7 +104,7 @@ def receipt_path(root):
 
 
 @pytest.mark.parametrize("field,value", [
-    ("index", "pypi"), ("tag", "v0.2.0"), ("version", "0.2.0"), ("commit", "b" * 40), ("run_id", 99),
+    ("index", "pypi"), ("tag", "v" + OTHER_VERSION), ("version", OTHER_VERSION), ("commit", "b" * 40), ("run_id", 99),
     ("repository", "fork/opentlv-python"), ("kind", "other"), ("schema", 2)])
 def test_promotion_rejects_a_receipt_of_something_else(staged, field, value):
     root, _, manifest, _, _, _ = staged
@@ -168,7 +168,7 @@ def test_promotion_authenticates_the_candidate(staged, monkeypatch):
     monkeypatch.setattr(publish_release, "run", lambda *args, **kwargs: None)
     # Another commit's candidate, or changed definitions, differ from this dispatch.
     with pytest.raises(ValueError, match="receipt differs"):
-        publish_release.staged_candidate(root, "v0.1.0", {**CURRENT, "commit": "b" * 40}, packages.policy(),
+        publish_release.staged_candidate(root, TAG, {**CURRENT, "commit": "b" * 40}, packages.policy(),
                                          manifest["core_lock"])
     monkeypatch.setattr(publish_release, "definition_hashes", lambda: {"changed": "0" * 64})
     with pytest.raises(ValueError, match="Candidate identity"):
@@ -186,7 +186,7 @@ def test_promotion_authenticates_the_candidate(staged, monkeypatch):
     (("definitions",), {"x": "0" * 64}, "definitions"), (("runtime", "python"), "3.9.1", "Runtime"),
     (("require_release",), False, "Release policy"), (("files", SDIST), "0" * 64, "staged set"),
     (("installed",), {SDIST: "0" * 64}, "staged wheel"), (("core", "commit"), "f" * 40, "Core"),
-    (("smoke",), False, "smoke"), (("package_versions", "opentlv-core"), "0.1.0", "smoke"),
+    (("smoke",), False, "smoke"), (("package_versions", "opentlv-core"), LEGACY_VERSION, "smoke"),
     (("tests", "tests"), 1, "test suite"), (("examples",), 1, "examples"), (("query", "checks"), 1, "Query")])
 def test_promotion_rejects_incomplete_or_foreign_installations(staged, path, value, message):
     root, _, manifest, _, _, _ = staged
@@ -246,7 +246,7 @@ def index(tmp_path, monkeypatch):
         "mode": "verified-source", "verified": True, "release_id": 1, "manifest_sha256": "f" * 64}
     write(tmp_path / "receipts/python-package-index-testpypi-2/receipt.json", {
         "schema": 1, "kind": "python-package-index-release", "index": "testpypi", "repository": IDENTITY["repository"],
-        "tag": "v0.1.0", "version": value["version"], "commit": IDENTITY["commit"], "run_id": 100, "run_attempt": 2,
+        "tag": TAG, "version": value["version"], "commit": IDENTITY["commit"], "run_id": 100, "run_attempt": 2,
         "files": files})
     monkeypatch.setattr(ci, "identity", lambda: copy.deepcopy(IDENTITY))
     monkeypatch.setattr(ci, "definition_hashes", lambda: {"scripts/ci.py": "b" * 64})
@@ -330,7 +330,7 @@ def test_index_install_rejects_another_served_sdist(index, monkeypatch):
     assert not args.output.exists()
 
 
-@pytest.mark.parametrize("field,value", [("index", "pypi"), ("commit", "b" * 40), ("version", "0.2.0"),
+@pytest.mark.parametrize("field,value", [("index", "pypi"), ("commit", "b" * 40), ("version", OTHER_VERSION),
                                          ("repository", "fork/opentlv-python"), ("files", {})])
 def test_index_install_rejects_a_receipt_of_something_else(index, field, value):
     args = index[0]

@@ -11,7 +11,20 @@ separate `opentlv-core` package. Each wheel is a `cp311-abi3` wheel for
 CPython 3.11 and newer, tagged `manylinux_2_28_x86_64` (Linux x86-64),
 `macosx_11_0_arm64` (macOS arm64) or `win_amd64` (Windows x64). Core is linked
 statically, and the extension depends only on the C runtime and Python.
-It is not on PyPI yet; install from source.
+
+## Install from PyPI
+
+```sh
+python -m pip install opentlv
+```
+
+pip installs the wheel on the platforms above. Elsewhere it builds the sdist,
+which needs the toolchain described under *Install from source*. The files on
+PyPI are the exact bytes that Full CI tested and that were first staged on
+TestPyPI, with PEP 740 provenance from the release workflow; see
+[release preparation](https://github.com/OpenTLV/opentlv-python/blob/main/docs/releases.md).
+If the `opentlv-core` package of v0.1.0 is installed, uninstall it and
+`opentlv` first: both ship `_opentlv`.
 
 ## Install from source
 
@@ -26,7 +39,7 @@ python -m venv .venv
 python -m pip install .
 ```
 
-The package version is `0.1.0`; `opentlv.__version__` and
+The package version is `0.2.0`; `opentlv.__version__` and
 `_opentlv.version_string()` report this Python binding version. Python
 releases are independent of Core. See [versioning](https://github.com/OpenTLV/opentlv-python/blob/main/docs/versioning.md).
 
@@ -126,7 +139,7 @@ CI retains the tested wheels and source distributions alongside their checksums
 and build records. The manual [release preparation](https://github.com/OpenTLV/opentlv-python/blob/main/docs/releases.md) runs
 verified-Core Full CI and assembles an attested candidate with a manifest,
 `SHA256SUMS` and a unique upload set of one wheel per platform and one sdist
-for the requested `tag` input, such as `v0.1.0`, which must match
+for the requested `tag` input, such as `v0.2.0`, which must match
 the package version, changelog and release notes. Set `publish_release: true`
 to create that tag and the GitHub Release with the versioned
 [release notes](https://github.com/OpenTLV/opentlv-python/blob/main/docs/release-notes.md) after verification and automatically

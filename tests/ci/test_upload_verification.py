@@ -16,7 +16,8 @@ import ci
 import ci_contract as contract
 import package_contract as packages
 from package_contract import DISTRIBUTION
-from test_gate import DEFINITIONS, IDENTITY, checks, records, verifications
+from test_gate import (DEFINITIONS, IDENTITY, LEGACY_DEPENDENCY, LEGACY_VERSION, OTHER_VERSION, VERSION, checks,
+                       records, verifications)
 from test_packages import PREFIX, artifacts, sdist_contents, wheel_contents, write_sdist, write_wheel
 
 WHEEL = packages.wheel_name(packages.policy(), "Linux")
@@ -32,10 +33,10 @@ def gate(data, verified):
     (("identity", "run_attempt"), "1"), (("definitions", "scripts/ci.py"), "e" * 64),
     (("configuration", "python"), "3.12"), (("require_release",), True), (("runtime", "python"), "3.12.1"),
     (("runtime", "system"), "Windows"), (("upload", WHEEL), "0" * 64), (("upload", SDIST), "0" * 64),
-    (("upload", "opentlv-0.1.0-cp311-abi3-linux_x86_64.whl"), "c" * 64),
+    (("upload", f"opentlv-{VERSION}-cp311-abi3-linux_x86_64.whl"), "c" * 64),
     (("installed",), {WHEEL: "0" * 64}), (("installed",), {SDIST: "e" * 64}),
     (("core", "commit"), "f" * 40), (("smoke",), False),
-    (("package_versions", "opentlv-core"), "0.1.0"), (("package_versions", DISTRIBUTION), "0.2.0"),
+    (("package_versions", "opentlv-core"), LEGACY_VERSION), (("package_versions", DISTRIBUTION), OTHER_VERSION),
     (("tests", "tests"), 1), (("tests", "skipped"), 1), (("examples",), 13), (("query", "checks"), 663)])
 def test_gate_rejects_incomplete_or_foreign_verification(path, value):
     data = records("full")
@@ -163,7 +164,7 @@ def test_verification_rejects_a_substituted_or_invalid_upload_set(tmp_path, evid
         path = output / "dist" / WHEEL
         path.write_bytes(path.read_bytes() + b"changed")
     elif mutation == "extra":
-        (output / "dist/opentlv_core-0.1.0-cp311-abi3-manylinux_2_28_x86_64.whl").write_bytes(b"split")
+        (output / f"dist/opentlv_core-{LEGACY_VERSION}-cp311-abi3-manylinux_2_28_x86_64.whl").write_bytes(b"split")
     elif mutation == "missing":
         (output / "dist" / SDIST).unlink()
     elif mutation == "platform":
@@ -181,7 +182,7 @@ def test_verification_rejects_a_substituted_or_invalid_upload_set(tmp_path, evid
         rewrite(output, WHEEL, lambda contents: contents.pop("_opentlv.abi3.so"))
     elif mutation == "dependency":
         rewrite(output, WHEEL, lambda contents: contents.__setitem__(
-            info + "METADATA", contents[info + "METADATA"] + b"Requires-Dist: opentlv-core==0.1.0\n"))
+            info + "METADATA", contents[info + "METADATA"] + f"Requires-Dist: {LEGACY_DEPENDENCY}\n".encode()))
     else:
         rewrite(output, WHEEL, lambda contents: contents.__setitem__(
             info + "WHEEL", contents[info + "WHEEL"].replace(b"manylinux_2_28_x86_64", b"linux_x86_64")))

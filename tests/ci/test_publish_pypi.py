@@ -20,14 +20,14 @@ import package_contract as packages
 import package_index
 import publish_pypi as pypi
 import release
-from test_gate import IDENTITY
+from test_gate import IDENTITY, LEGACY_DEPENDENCY, OTHER_VERSION, TAG, VERSION
 from test_packages import release_fixture
 
 
 @pytest.fixture
 def candidate(tmp_path, monkeypatch):
     evidence, verification, quality, assembled = release_fixture(tmp_path, monkeypatch)
-    release.assemble(evidence, verification, quality, assembled, "v0.1.0")
+    release.assemble(evidence, verification, quality, assembled, TAG)
     # download-artifact places each attempt's candidate in a directory named after its artifact.
     output = tmp_path / "candidates" / ("python-release-candidate-" + IDENTITY["run_attempt"])
     output.parent.mkdir()
@@ -43,7 +43,7 @@ def candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(pypi, "unused_tag", lambda tag: calls.__setitem__("unused_tag", calls["unused_tag"] + 1))
     monkeypatch.setattr(pypi, "verify_published",
                         lambda *args: calls.__setitem__("verify_published", calls["verify_published"] + 1))
-    monkeypatch.setattr(pypi, "api", lambda path: [{"id": 7, "tag_name": "v0.1.0"}] if "?" in path else {"id": 7})
+    monkeypatch.setattr(pypi, "api", lambda path: [{"id": 7, "tag_name": TAG}] if "?" in path else {"id": 7})
     monkeypatch.setattr(pypi, "WORK", tmp_path / "pypi")
     index = {}
     monkeypatch.setattr(pypi, "index_files", lambda name, version: dict(index))
@@ -71,7 +71,7 @@ def outputs(tmp_path):
 
 def test_testpypi_staging_uploads_the_complete_selected_set(candidate):
     output, manifest, _, calls, tmp_path = candidate
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     uploaded = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in (pypi.WORK / "upload").iterdir()}
     assert uploaded == {name: item["sha256"] for name, item in manifest["distributions"].items()}
@@ -88,10 +88,10 @@ def test_pypi_requires_the_github_release_of_this_run(candidate, monkeypatch):
     monkeypatch.setenv("FULL_RESULT", "skipped")
     monkeypatch.setenv("ASSEMBLE_RESULT", "skipped")
     with pytest.raises(ValueError, match="GitHub release"):
-        pypi.prepare(output.parent, "v0.1.0", "pypi")
+        pypi.prepare(output.parent, TAG, "pypi")
     assert not pypi.WORK.exists()
     monkeypatch.setenv("PUBLISH_RESULT", "success")
-    pypi.prepare(output.parent, "v0.1.0", "pypi")
+    pypi.prepare(output.parent, TAG, "pypi")
     assert calls["unused_tag"] == 0 and calls["verify_published"] == 1
     assert outputs(tmp_path)["repository_url"] == "https://upload.pypi.org/legacy/"
 
@@ -103,7 +103,7 @@ def test_pypi_requires_the_github_release_of_this_run(candidate, monkeypatch):
 def test_failed_gate_or_foreign_workflow_never_prepares_an_upload(candidate, monkeypatch, key, value):
     monkeypatch.setenv(key, value)
     with pytest.raises(ValueError):
-        pypi.prepare(candidate[0].parent, "v0.1.0", "testpypi")
+        pypi.prepare(candidate[0].parent, TAG, "testpypi")
     assert not pypi.WORK.exists()
 
 
@@ -112,7 +112,7 @@ def test_retry_uploads_only_missing_files_with_identical_bytes(candidate, presen
     output, manifest, index, _, tmp_path = candidate
     names = sorted(manifest["distributions"])
     index.update({name: manifest["distributions"][name]["sha256"] for name in names[:present]})
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     assert sorted(path.name for path in (pypi.WORK / "upload").iterdir()) == names[present:]
     assert outputs(tmp_path)["upload"] == ("true" if present < 4 else "false")
 
@@ -124,9 +124,9 @@ def test_index_with_other_files_for_the_version_is_never_overwritten(candidate, 
     if change == "bytes":
         index[name] = "0" * 64
     else:
-        index["opentlv-0.1.0-cp311-abi3-manylinux_2_17_x86_64.whl"] = "1" * 64
+        index[f"opentlv-{VERSION}-cp311-abi3-manylinux_2_17_x86_64.whl"] = "1" * 64
     with pytest.raises(ValueError, match="new version"):
-        pypi.prepare(output.parent, "v0.1.0", "testpypi")
+        pypi.prepare(output.parent, TAG, "testpypi")
     assert not (pypi.WORK / "upload").exists()
 
 
@@ -182,19 +182,19 @@ def test_candidate_upload_set_is_rechecked_before_upload(candidate, mutation, me
         item["sha256"] = manifest["files"]["dist/" + name] = manifest["files"][item["source"]] = sha
         write(output / "manifest.json", manifest)
     with pytest.raises(ValueError, match=message):
-        pypi.prepare(output.parent, "v0.1.0", "testpypi")
+        pypi.prepare(output.parent, TAG, "testpypi")
     assert not (pypi.WORK / "upload").exists()
 
 
 def test_confirm_waits_for_the_index_and_records_a_receipt(candidate, monkeypatch):
     output, manifest, index, _, _ = candidate
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     files = {name: item["sha256"] for name, item in manifest["distributions"].items()}
     responses = [{}, dict(list(files.items())[:2]), files]
     monkeypatch.setattr(pypi, "index_files", lambda *args: responses.pop(0))
     pypi.confirm("testpypi", delay=0)
     receipt = read(pypi.WORK / "receipt.json")
-    assert receipt["files"] == files and receipt["index"] == "testpypi" and receipt["tag"] == "v0.1.0"
+    assert receipt["files"] == files and receipt["index"] == "testpypi" and receipt["tag"] == TAG
     assert receipt["run_attempt"] == int(IDENTITY["run_attempt"]) and receipt["commit"] == IDENTITY["commit"]
 
 
@@ -202,7 +202,7 @@ def test_confirm_waits_for_the_index_and_records_a_receipt(candidate, monkeypatc
                                        {"repository": "fork/opentlv-python"}, {"kind": "GitLab"}])
 def test_confirm_rejects_provenance_from_another_publisher(candidate, monkeypatch, publisher):
     output, manifest, index, _, _ = candidate
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     index.update({name: item["sha256"] for name, item in manifest["distributions"].items()})
     monkeypatch.setattr(pypi, "provenance", lambda name, version, filename: bundle(name, **publisher))
     with pytest.raises(ValueError, match="provenance"):
@@ -213,7 +213,7 @@ def test_confirm_rejects_provenance_from_another_publisher(candidate, monkeypatc
 @pytest.mark.parametrize("record", [None, {"attestation_bundles": []}])
 def test_confirm_requires_provenance_for_every_file(candidate, monkeypatch, record):
     output, manifest, index, _, _ = candidate
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     index.update({name: item["sha256"] for name, item in manifest["distributions"].items()})
     monkeypatch.setattr(pypi, "provenance", lambda name, version, filename: record)
     with pytest.raises(ValueError, match="provenance"):
@@ -221,13 +221,13 @@ def test_confirm_requires_provenance_for_every_file(candidate, monkeypatch, reco
     assert not (pypi.WORK / "receipt.json").exists()
 
 
-@pytest.mark.parametrize("field,value", [("requires_dist", ["opentlv-core==0.1.0"]), ("requires_python", ">=3.12"),
-                                         ("name", "opentlv-core"), ("version", "0.2.0")])
+@pytest.mark.parametrize("field,value", [("requires_dist", [LEGACY_DEPENDENCY]), ("requires_python", ">=3.12"),
+                                         ("name", "opentlv-core"), ("version", OTHER_VERSION)])
 def test_confirm_rejects_other_index_metadata(candidate, monkeypatch, field, value):
     output, manifest, index, _, _ = candidate
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     index.update({name: item["sha256"] for name, item in manifest["distributions"].items()})
-    info = {"name": "opentlv", "version": "0.1.0", "requires_python": ">=3.11", "requires_dist": None, field: value}
+    info = {"name": "opentlv", "version": VERSION, "requires_python": ">=3.11", "requires_dist": None, field: value}
     monkeypatch.setattr(pypi, "index_release", lambda name, version: {"info": info})
     with pytest.raises(ValueError, match="metadata"):
         pypi.confirm("testpypi", attempts=1, delay=0)
@@ -237,7 +237,7 @@ def test_confirm_rejects_other_index_metadata(candidate, monkeypatch, field, val
 @pytest.mark.parametrize("listed,message", [("partial", "complete upload set"), ("different", "differ")])
 def test_confirm_rejects_incomplete_or_different_index_files(candidate, monkeypatch, listed, message):
     output, manifest, _, _, _ = candidate
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     files = {name: item["sha256"] for name, item in manifest["distributions"].items()}
     shown = dict(list(files.items())[:3]) if listed == "partial" else {**files, next(iter(files)): "0" * 64}
     monkeypatch.setattr(pypi, "index_files", lambda *args: shown)
@@ -273,6 +273,7 @@ def test_publisher_requires_an_explicit_index(monkeypatch, value):
         pypi.requested_index()
 
 
+# The index client tests pass their own version, independently of the committed policy.
 def test_index_files_reads_the_version_json_and_treats_404_as_unpublished(monkeypatch):
     requested = []
 
@@ -306,7 +307,7 @@ def test_rerun_of_failed_jobs_uploads_the_earlier_attempts_candidate(candidate, 
     # Attempt 3 re-runs only the failed upload job; attempt 2's attested candidate is reused.
     monkeypatch.setattr(pypi, "checked_dispatch", lambda tag: (
         {**IDENTITY, "run_attempt": "3"}, packages.policy(), read(output / "manifest.json")["core_lock"]))
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     assert calls["producer"] == [("python-release-candidate-2", "2", "3")]
 
 
@@ -319,7 +320,7 @@ def test_newest_candidate_of_the_run_is_selected(candidate, monkeypatch):
     write(newer / "manifest.json", manifest)
     monkeypatch.setattr(pypi, "checked_dispatch", lambda tag: (
         {**IDENTITY, "run_attempt": "3"}, packages.policy(), manifest["core_lock"]))
-    pypi.prepare(output.parent, "v0.1.0", "testpypi")
+    pypi.prepare(output.parent, TAG, "testpypi")
     assert calls["producer"] == [("python-release-candidate-3", "3", "3")]
 
 
@@ -339,5 +340,5 @@ def test_candidate_from_another_run_or_attempt_is_rejected(candidate, change):
     if output.exists():
         write(output / "manifest.json", manifest)
     with pytest.raises(ValueError, match="this run|Missing release candidate"):
-        pypi.prepare(candidate[0].parent, "v0.1.0", "testpypi")
+        pypi.prepare(candidate[0].parent, TAG, "testpypi")
     assert not pypi.WORK.exists()
