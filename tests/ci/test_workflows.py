@@ -176,7 +176,11 @@ def test_promotion_builds_nothing_and_uses_the_staged_evidence():
 def test_published_wheels_are_installed_from_the_index_on_every_configuration():
     jobs = workflow("python-release.yml")["jobs"]
     job = jobs["index_install"]
-    assert set(job["needs"]) == {"plan", "pypi"} and "if" not in job
+    assert set(job["needs"]) == {"plan", "pypi"}
+    # pypi needs jobs that staging (publish) or a promotion (full, assemble) skips; the implicit
+    # success() would skip the installations with them, so check only the direct dependencies.
+    assert " ".join(job["if"].split()) == (
+        "!cancelled() && needs.plan.result == 'success' && needs.pypi.result == 'success'")
     assert jobs["plan"]["if"] == "inputs.pypi != 'none'"
     assert job["strategy"]["fail-fast"] == "false"
     assert job["strategy"]["matrix"] == "${{ fromJSON(needs.plan.outputs.matrix) }}"

@@ -174,7 +174,12 @@ needs a new patch version.
 ### Install from the index
 
 After either upload, `Python index installation / <configuration>` runs on all
-15 configurations. `scripts/ci.py index` installs into a fresh virtualenv, by
+15 configurations. Its condition checks only the matrix plan and the upload job:
+the default condition also requires the upload job's own dependencies, and
+staging skips the GitHub publication while a promotion skips Full CI and
+assembly. A staging run whose installations did not run has no install records
+and cannot be promoted.
+`scripts/ci.py index` installs into a fresh virtualenv, by
 name, from that index alone and with the receipt's hash:
 
 ```sh
