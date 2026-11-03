@@ -234,6 +234,10 @@ jobs:
   index_install:
     name: Python index installation / ${{ matrix.id }}
     needs: [plan, pypi]
+    # The implicit success() also requires every indirect dependency to succeed, but staging always
+    # skips publish and a promotion skips full and assemble. Require only the plan and the upload.
+    if: >-
+      !cancelled() && needs.plan.result == 'success' && needs.pypi.result == 'success'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
