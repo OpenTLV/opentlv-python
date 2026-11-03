@@ -42,7 +42,7 @@ To build the sdist and rebuild the wheel from it:
 ```sh
 python -m pip install build pytest
 python -m build --sdist --outdir build/dist .
-python -m pip wheel --no-deps build/dist/opentlv-0.1.0.tar.gz -w build/wheels
+python -m pip wheel --no-deps build/dist/opentlv-0.2.0.tar.gz -w build/wheels
 ```
 
 ## Portable wheels
@@ -235,7 +235,7 @@ checks, source selections and limitations.
 
 ## Versioning and ownership
 
-The Python distribution version is `0.1.0`. `opentlv.__version__` and
+The Python distribution version is `0.2.0`. `opentlv.__version__` and
 `_opentlv.version_string()` report that Python binding version, generated from
 `cmake/python-package.json` during configuration. Core `0.8.0` is in the
 dependency lock and installed dependency metadata; it no longer supplies the

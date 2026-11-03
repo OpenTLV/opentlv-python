@@ -14,6 +14,10 @@ import verified_core
 from build_support import ROOT, read
 from package_contract import DISTRIBUTION, artifact_names, policy as package_policy, wheel_name
 
+# Fixtures of the committed package follow its policy, so a version bump needs no test change.
+VERSION = package_policy()["version"]
+TAG = "v" + VERSION
+OTHER_VERSION = "9.9.9"
 IDENTITY = {"repository": contract.REPOSITORY, "commit": "a" * 40, "run_id": "100",
             "run_attempt": "2", "hosted": True, "dirty": False}
 DEFINITIONS = {"scripts/ci.py": "b" * 64}
@@ -103,7 +107,7 @@ def test_complete_gate(tier):
     (("tests", "failures"), 1), (("examples",), 7), (("query", "checks"), 663),
     (("query", "fixtures"), 170), (("packaging",), "none"), (("smoke",), False),
     (("wheels", "opentlv"), "bad"), (("wheels", "opentlv-core"), "d" * 64), (("require_release",), True),
-    (("package_version",), "0.7.1"), (("package_versions", "opentlv"), "0.2.0"),
+    (("package_version",), "0.7.1"), (("package_versions", "opentlv"), OTHER_VERSION),
     (("package_versions", "opentlv-core"), "0.1.0"), (("artifacts",), {}),
     (("artifacts", "wheels/opentlv-0.1.0-cp311-abi3-linux_x86_64.whl"), "c" * 64),
     (("compiler", "SYSTEM"), "Windows"), (("compiler", "COMPILER_ID"), ""),

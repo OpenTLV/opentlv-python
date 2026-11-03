@@ -2,7 +2,7 @@
 
 `Python release preparation` (`python-release.yml`) is a manual candidate gate.
 Every dispatch names the release with the required `tag` input, for example
-`v0.1.0`. By default it produces an attested candidate for that tag. The
+`v0.2.0`. By default it produces an attested candidate for that tag. The
 optional `publish_release` input also creates exactly that tag and a GitHub
 Release after verification.
 The optional `pypi` input stages the verified upload set on TestPyPI, or promotes
@@ -15,7 +15,7 @@ stored.
 1. Select a real authenticated Core schema-2 release. Update the exact Core
    commit/version/tag in `cmake/core-artifact.json` and validate its compatibility
    with `cmake/python-package.json`. A null release tag causes preflight to fail;
-   do not bypass it or relabel pinned Git as verified. Python 0.1.0 locks Core
+   do not bypass it or relabel pinned Git as verified. Python 0.2.0 locks Core
    `v0.8.0` at `345c77acb29266036df5f27d04ce315bb61853cc`.
 2. Select the independent Python version as described in [versioning](versioning.md).
    Write [`docs/release-notes.md`](release-notes.md), starting with

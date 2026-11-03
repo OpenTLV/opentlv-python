@@ -19,7 +19,7 @@ import ci_contract
 import package_contract as packages
 from package_contract import DISTRIBUTION
 import release
-from test_gate import IDENTITY, checks, null_lock, records, verifications
+from test_gate import IDENTITY, OTHER_VERSION, TAG, VERSION, checks, null_lock, records, verifications
 
 PREFIX = DISTRIBUTION + "-" + packages.policy()["version"]
 
@@ -206,7 +206,7 @@ def test_sdist_requires_license_text(tmp_path):
 
 
 @pytest.mark.parametrize("before,after", [
-    (b"Version: 0.1.0", b"Version: 0.7.1"),
+    (f"Version: {VERSION}".encode(), b"Version: 0.7.1"),
     (b"Name: opentlv", b"Name: opentlv-core"),
     (b"Requires-Python: >=3.11", b"Requires-Python: >=3.12"),
     (b"Requires-Python: >=3.11\n", b"Requires-Python: >=3.11\nRequires-Dist: opentlv-core==0.1.0\n"),
@@ -232,7 +232,7 @@ def test_source_policy_drift(tmp_path, mutation):
     text = project.read_text()
     if mutation in ("version", "dependency", "license", "license-files", "packages"):
         project.write_text({
-            "version": text.replace('version = "0.1.0"', 'version = "0.2.0"'),
+            "version": text.replace(f'version = "{VERSION}"', f'version = "{OTHER_VERSION}"'),
             "dependency": text.replace('license-files = ["LICENSE"]\n',
                                        'license-files = ["LICENSE"]\ndependencies = ["opentlv-core==0.1.0"]\n'),
             "license": text.replace('license = "MIT"', 'license = "Apache-2.0"'),
@@ -317,10 +317,10 @@ def release_fixture(tmp_path, monkeypatch):
 
 def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypatch):
     evidence, verification, quality, output = release_fixture(tmp_path, monkeypatch)
-    release.assemble(evidence, verification, quality, output, "v0.1.0")
+    release.assemble(evidence, verification, quality, output, TAG)
     manifest = read(output / "manifest.json")
     assert manifest["publication_enabled"] is False
-    assert manifest["tag"] == "v0.1.0"
+    assert manifest["tag"] == TAG
     assert manifest["identity"] == IDENTITY
     assert len(manifest["configurations"]) == 15
     for line in (output / "SHA256SUMS").read_text().splitlines():
@@ -352,7 +352,7 @@ def test_assemble_preserves_validated_packages_and_checksums(tmp_path, monkeypat
             item["id"] + "/verified.json" for item in ci_contract.matrix("full"))
     assert manifest["distributions"] == read(quality)["upload"]
     with pytest.raises(ValueError, match="fresh"):
-        release.assemble(evidence, verification, quality, output, "v0.1.0")
+        release.assemble(evidence, verification, quality, output, TAG)
 
 
 @pytest.mark.parametrize("missing", ["windows-3.11", "linux-3.11"])
@@ -394,7 +394,7 @@ def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation
             record["core"]["verified"] = False
         write(path, record)
     with pytest.raises(ValueError):
-        release.assemble(evidence, verification, quality, output, "v0.1.0")
+        release.assemble(evidence, verification, quality, output, TAG)
     assert not output.exists()
 
 
@@ -415,7 +415,7 @@ def remote(monkeypatch, refs=(), releases=()):
 def test_release_preflight_rejects_null_lock(monkeypatch):
     null_lock(monkeypatch)
     with pytest.raises(ValueError, match="published Core"):
-        release.preflight("v0.1.0")
+        release.preflight(TAG)
 
 
 def test_committed_release_notes_and_changelog_match_requested_tag():
@@ -486,7 +486,7 @@ def test_release_preflight_rejects_untrusted_identity(monkeypatch, key, value):
     monkeypatch.setattr(release, "identity", lambda: {**IDENTITY, key: value})
     calls = remote(monkeypatch)
     with pytest.raises(ValueError, match="official clean hosted"):
-        release.preflight("v0.1.0")
+        release.preflight(TAG)
     assert not calls
 
 
@@ -497,12 +497,12 @@ def test_release_preflight_requires_manual_main(monkeypatch):
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setenv("GITHUB_REF", "refs/heads/feature/test")
     with pytest.raises(ValueError, match="main"):
-        release.preflight("v0.1.0")
+        release.preflight(TAG)
     monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
-    assert release.preflight("v0.1.0")[0] == IDENTITY
+    assert release.preflight(TAG)[0] == IDENTITY
     monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
     with pytest.raises(ValueError, match="main"):
-        release.preflight("v0.1.0")
+        release.preflight(TAG)
 
 
 def test_release_preflight_rejects_existing_or_mismatched_tag(monkeypatch):
@@ -510,10 +510,10 @@ def test_release_preflight_rejects_existing_or_mismatched_tag(monkeypatch):
     monkeypatch.setattr(release, "identity", lambda: copy.deepcopy(IDENTITY))
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
-    remote(monkeypatch, refs=["v0.1.0"])
+    remote(monkeypatch, refs=[TAG])
     with pytest.raises(ValueError, match="already exists"):
-        release.preflight("v0.1.0")
+        release.preflight(TAG)
     calls = remote(monkeypatch)
     with pytest.raises(ValueError, match="package version"):
-        release.preflight("v0.2.0")
+        release.preflight("v" + OTHER_VERSION)
     assert not calls
