@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Unused Python tag matching the package version, CHANGELOG.md and docs/release-notes.md (v0.2.1)
+        description: Unused Python tag matching the package version, CHANGELOG.md and docs/release-notes.md (v0.2.2)
         required: true
         type: string
       publish_release:
@@ -90,13 +90,14 @@ jobs:
         with:
           name: python-quality-full-${{ github.run_attempt }}
           path: build/quality
+      # As in the Full gate, each configuration counts with its newest attempt of this run.
       - uses: actions/download-artifact@v4
         with:
-          pattern: python-build-full-*-${{ github.run_attempt }}
+          pattern: python-build-full-*
           path: build/evidence
       - uses: actions/download-artifact@v4
         with:
-          pattern: python-verify-full-*-${{ github.run_attempt }}
+          pattern: python-verify-full-*
           path: build/verification
       - env:
           GH_TOKEN: ${{ github.token }}

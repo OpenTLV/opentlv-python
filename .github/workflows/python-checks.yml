@@ -90,9 +90,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      # Re-running failed jobs keeps the other builds of an earlier attempt; take each one's newest.
       - uses: actions/download-artifact@v4
         with:
-          pattern: python-build-${{ inputs.tier }}-*-${{ github.run_attempt }}
+          pattern: python-build-${{ inputs.tier }}-*
           path: build/evidence
       - name: Select one wheel per platform and the sdist from the tested builds
         shell: bash
@@ -128,9 +129,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+      # A re-run of failed verifications keeps the upload set that an earlier attempt selected.
       - uses: actions/download-artifact@v4
         with:
-          name: python-upload-${{ inputs.tier }}-${{ github.run_attempt }}
+          pattern: python-upload-${{ inputs.tier }}-*
           path: build/upload
       - name: Install the selected wheel by name and run the installed checks
         shell: bash
@@ -203,14 +205,15 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      # Every attempt of this run; each configuration counts with its newest evidence.
       - uses: actions/download-artifact@v4
         with:
-          pattern: python-build-${{ inputs.tier }}-*-${{ github.run_attempt }}
+          pattern: python-build-${{ inputs.tier }}-*
           path: build/evidence
       - uses: actions/download-artifact@v4
         if: inputs.tier == 'full'
         with:
-          pattern: python-verify-${{ inputs.tier }}-*-${{ github.run_attempt }}
+          pattern: python-verify-${{ inputs.tier }}-*
           path: build/verification
       - shell: bash
         env:

@@ -52,7 +52,7 @@ def staged(tmp_path, monkeypatch):
         "repository": publish_release.REPOSITORY, "project": f"https://test.pypi.org/project/opentlv/{VERSION}/",
         "tag": TAG, "version": VERSION, "commit": IDENTITY["commit"], "run_id": int(STAGING_RUN),
         "run_attempt": int(IDENTITY["run_attempt"]), "files": files})
-    core = read(evidence / "linux-3.11/record.json")["core"]
+    core = read(evidence / "python-build-full-linux-3.11-2/record.json")["core"]
     for item in contract.matrix("full"):
         wheel = packages.wheel_name(packages.policy(), item["system"])
         write(root / f'python-index-install-testpypi-{item["id"]}-2/indexed.json', {

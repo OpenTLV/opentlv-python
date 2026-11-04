@@ -28,9 +28,9 @@ assert opentlv.__version__ == _opentlv.version_string() == version("opentlv")
 ```
 
 The first Python release, **0.1.0**, supports exactly Core **0.8.0**; the
-unreleased migration builds used Core 0.7.1. **0.2.1**, the first release of
+unreleased migration builds used Core 0.7.1. **0.2.2**, the first release of
 the single `opentlv` distribution and the first for PyPI, keeps exactly Core
-**0.8.0** and the same lock; **0.2.0** was staged on TestPyPI only and is not
+**0.8.0** and the same lock; **0.2.0** and **0.2.1** were prepared but not
 released. No broader range is claimed
 without validation. `compatible_core_versions` lists tested versions;
 `cmake/core-artifact.json` pins the exact Core commit and optional authenticated

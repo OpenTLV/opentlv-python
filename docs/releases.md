@@ -2,7 +2,7 @@
 
 `Python release preparation` (`python-release.yml`) is a manual candidate gate.
 Every dispatch names the release with the required `tag` input, for example
-`v0.2.1`. By default it produces an attested candidate for that tag. The
+`v0.2.2`. By default it produces an attested candidate for that tag. The
 optional `publish_release` input also creates exactly that tag and a GitHub
 Release after verification.
 The optional `pypi` input stages the verified upload set on TestPyPI, or promotes
@@ -15,7 +15,7 @@ stored.
 1. Select a real authenticated Core schema-2 release. Update the exact Core
    commit/version/tag in `cmake/core-artifact.json` and validate its compatibility
    with `cmake/python-package.json`. A null release tag causes preflight to fail;
-   do not bypass it or relabel pinned Git as verified. Python 0.2.1 locks Core
+   do not bypass it or relabel pinned Git as verified. Python 0.2.2 locks Core
    `v0.8.0` at `345c77acb29266036df5f27d04ce315bb61853cc`.
 2. Select the independent Python version as described in [versioning](versioning.md).
    Write [`docs/release-notes.md`](release-notes.md), starting with
@@ -50,10 +50,15 @@ stored.
    baseline and Core lock to the exact run. All three top-level files receive
    GitHub build-provenance attestations before artifact upload.
 
-Rerun all jobs when retrying a candidate or a GitHub publication without
-promotion. Earlier attempts'
-packages or quality reports are rejected; only a package-index upload retries
-with **Re-run failed jobs** (see [PyPI Trusted Publishing](#pypi-trusted-publishing)). Candidate files retain their tested bytes; assembly does not rebuild
+When Full jobs fail or are cancelled, for example because no hosted macOS runner
+picked them up, use **Re-run failed jobs**. The builds and verifications that
+did not run again count with their earlier attempt of this run, while the
+gate, assembly and, after a re-run build, the upload set selection run again
+in the new attempt; see
+[quality gates](quality-gates.md#upload-set-verification). A package-index upload
+also retries with **Re-run failed jobs** (see [PyPI Trusted Publishing](#pypi-trusted-publishing)).
+Rerun all jobs when retrying a GitHub publication without promotion. Assembly
+never reuses the quality report of an earlier attempt. Candidate files retain their tested bytes; assembly does not rebuild
 them. Builds are not bit-for-bit reproducible: the five Python versions of one
 platform produce the same `cp311-abi3` wheel filename with different bytes, and
 every configuration builds its own sdist. They therefore remain in separate

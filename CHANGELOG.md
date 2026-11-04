@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-11-04
+
+### Changed
+
+- Prepare `0.2.2`, the first release on PyPI. Neither 0.2.0 nor 0.2.1 reached a GitHub Release or PyPI: 0.2.0 was staged on TestPyPI without its index installations, and the staging of 0.2.1 in run 41664081931 stopped in Full CI before its upload. TestPyPI never accepts a used filename again, even after deletion, so the 0.2.0 files cannot be staged again, and a new version keeps the release history unambiguous. The package policy and `pyproject.toml` move to `0.2.2` with the same Core `v0.8.0` lock and public API. `docs/release-notes.md` describes v0.2.2 as the first PyPI release that replaces both unreleased versions, the README, release guide, development guide, versioning page and the `tag` input description name the new version, and the 0.2.0 and 0.2.1 sections below record prepared versions that were not released. (#51)
+
+### Fixed
+
+- Recover a Full run with **Re-run failed jobs**. Full and assembly downloaded only the artifacts of their own attempt, so after a re-run of failed jobs the upload set, gate and assembly found only the re-run jobs' evidence and failed, and only **Re-run all jobs** could succeed; in release preparation run 41664081931 each of four attempts lost one to five macOS arm64 jobs that no hosted runner acquired within 15 minutes. `Python upload set`, the gate and assembly now download the build and verification evidence of every attempt and count each configuration with its newest record, and `Python upload set / <configuration>` installs the newest attempt's upload set. Each record must lie in the artifact that names its tier, configuration and attempt, and must come from this run at this or an earlier attempt with the same repository, commit, definitions and release policy. Evidence of a later attempt, of another run, in another attempt's artifact or twice for one attempt still fails, every job result must still be successful, and the quality report stays bound to the attempt that assembles it. The quality and release guides document the recovery. (#51)
+- Run `Python index installation / <configuration>` after every package index upload. The job had no condition, so the implicit `success()` also required its indirect dependencies, but staging always skips `publish` and a promotion skips `full` and `assemble`; in staging run 41652582386 the upload to TestPyPI succeeded but none of the 15 installations ran, and the run was still green. The job now runs when the matrix plan and the upload job succeeded, and the workflow test requires that condition instead of forbidding one. The fix was first prepared for 0.2.1, which was not released. (#51)
+
 ## [0.2.1] - 2026-11-03
 
 ### Changed

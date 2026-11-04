@@ -17,8 +17,9 @@ from urllib.parse import unquote, urlparse
 import venv
 
 from build_support import ROOT, digest, read, require, run, write
-from ci_contract import (TIERS, definition_hashes, identity, junit_counts, matrix, select_distributions,
-                         validate_dependency, validate_records, validate_suite)
+from ci_contract import (TIERS, artifact, attempt as recorded_attempt, definition_hashes, identity, junit_counts,
+                         latest, matrix, recorded, same_run, select_distributions, validate_dependency,
+                         validate_records, validate_suite)
 from core_dependency import corpus as core_corpus
 from verified_core import lock
 from package_contract import (DISTRIBUTION, check_sdist, check_wheel, inspect_artifacts,
@@ -140,20 +141,19 @@ def build(args):
 
 
 def select(args):
-    """Copy the upload set out of this attempt's Full builds; the gate derives and checks it again."""
+    """Copy the upload set out of this run's newest Full builds; the gate derives and checks it again."""
     output = args.output.resolve()
     require(not output.exists(), "Use a fresh --output directory")
     current, definitions, package = identity(), definition_hashes(), package_policy()
-    paths = sorted(args.evidence.rglob("record.json"))
-    records = [read(path) for path in paths]
-    directories = {record["configuration"]["id"]: path.parent / "ci" for path, record in zip(paths, records)}
-    require(len(directories) == len(records) and set(directories) == {item["id"] for item in matrix("full")},
-            "Missing or duplicate configuration evidence")
-    for path, record in zip(paths, records):
+    evidence = latest(sorted(args.evidence.rglob("record.json")), "build")
+    records = [record for _, record in evidence]
+    directories = {record["configuration"]["id"]: path.parent / "ci" for path, record in evidence}
+    require(set(directories) == {item["id"] for item in matrix("full")}, "Missing or duplicate configuration evidence")
+    for path, record in evidence:
         require(record.get("tier") == "full" and record.get("status") == "success"
-                and record.get("identity") == current and record.get("definitions") == definitions
+                and same_run(record.get("identity"), current) and record.get("definitions") == definitions
                 and record.get("require_release") is args.require_release,
-                "Build evidence is not from this Full attempt")
+                "Build evidence is not from this Full run")
         validate_bundle(path.parent / "ci", record, package)
     upload = select_distributions(records)
 
@@ -180,13 +180,13 @@ def select(args):
 
 
 def upload_set(directory, record, package):
-    """Check the downloaded upload set against its selection, this attempt and the package contract."""
+    """Check the downloaded upload set against its selection, this run and the package contract."""
     selection = read(directory / "selection.json")
     require(selection.get("schema") == 1 and selection.get("kind") == "upload-set"
-            and selection.get("identity") == record["identity"]
+            and same_run(selection.get("identity"), record["identity"])
             and selection.get("definitions") == record["definitions"]
             and selection.get("require_release") is record["require_release"],
-            "Upload set is not from this attempt")
+            "Upload set is not from this run")
     names = upload_names(package)
     wheels = {name for name, system in names.items() if system}
     distributions = selection.get("distributions", {})
@@ -202,6 +202,23 @@ def upload_set(directory, record, package):
         else:
             check_sdist(files[name], package)
     return selection
+
+
+def newest_upload(root):
+    """Return the directory of the newest attempt's upload set.
+
+    Re-running failed verifications keeps the selection of the attempt that ran `select`.
+    """
+    selections = {}
+    for path in sorted(root.rglob("selection.json")):
+        selection = read(path)
+        require(path.parent.name == artifact("upload", "full", recorded(selection, "identity").get("run_attempt")),
+                "Upload set is not in the artifact of its attempt")
+        rank = recorded_attempt(selection.get("identity")) or 0
+        require(rank not in selections, "Duplicate upload sets of one attempt")
+        selections[rank] = path.parent
+    require(selections, "Missing upload set")
+    return selections[max(selections)]
 
 
 def installed_wheel(report):
@@ -245,7 +262,7 @@ def verify(args):
     configuration, work, record = start(args)
     package = package_policy()
     started = time.monotonic()
-    upload = args.upload.resolve()
+    upload = newest_upload(args.upload.resolve())
     selection = upload_set(upload, record, package)
     wheel = wheel_name(package, configuration["system"])
     core = selection["core"][wheel]
@@ -367,11 +384,13 @@ def main():
         current = identity()
         require(current["hosted"] and not current["dirty"] and current["repository"] == "OpenTLV/opentlv-python",
                 "Hosted quality evidence requires the official clean checkout")
-        records = [read(path) for path in sorted(args.evidence.rglob("record.json"))]
-        for path in sorted(args.evidence.rglob("record.json")):
-            validate_bundle(path.parent / "ci", read(path), package_policy())
+        # The downloads hold every attempt of this run; each configuration counts with its newest one.
+        evidence = latest(sorted(args.evidence.rglob("record.json")), "build")
+        records = [record for _, record in evidence]
+        for path, record in evidence:
+            validate_bundle(path.parent / "ci", record, package_policy())
         # Only Full downloads verification evidence.
-        verifications = [read(path) for path in sorted(args.verification.rglob("verified.json"))]
+        verifications = [record for _, record in latest(sorted(args.verification.rglob("verified.json")), "verify")]
         report = validate_records(records, args.tier, current, definition_hashes(),
                                   json.loads(os.environ["CHECK_RESULTS"]), args.require_release, verifications)
         write(args.output, report)
