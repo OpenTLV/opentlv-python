@@ -144,19 +144,36 @@ def test_latest_takes_each_configuration_from_its_newest_attempt(tmp_path):
     for record in data:
         for run_attempt in ("1", "2"):
             if run_attempt == "1" or record is not data[0]:
-                path = tmp_path / (record["configuration"]["id"] + "-" + run_attempt) / "record.json"
+                path = tmp_path / contract.artifact("build", "full", record["configuration"]["id"],
+                                                    run_attempt) / "record.json"
                 write(path, {**record, "identity": {**IDENTITY, "run_attempt": run_attempt}})
                 paths.append(path)
-    chosen = contract.latest(sorted(paths))
+    chosen = contract.latest(sorted(paths), "build")
     names = sorted(item["configuration"]["id"] for item in data)
     assert [record["configuration"]["id"] for _, record in chosen] == names
     attempts = {record["configuration"]["id"]: record["identity"]["run_attempt"] for _, record in chosen}
     assert attempts.pop(data[0]["configuration"]["id"]) == "1" and set(attempts.values()) == {"2"}
     assert all(path.parent.name.endswith("-" + record["identity"]["run_attempt"]) for path, record in chosen)
-    duplicate = tmp_path / "duplicate/record.json"
-    write(duplicate, {**data[1], "identity": dict(IDENTITY)})
+    duplicate = tmp_path / "again" / paths[2].parent.name / "record.json"
+    write(duplicate, read(paths[2]))
     with pytest.raises(ValueError, match="Duplicate evidence"):
-        contract.latest(sorted(paths) + [duplicate])
+        contract.latest(sorted(paths) + [duplicate], "build")
+
+
+@pytest.mark.parametrize("name", [
+    "python-build-full-linux-3.11-1", "python-build-full-linux-3.12-2", "python-verify-full-linux-3.11-2",
+    "python-build-pr-linux-3.11-2", "linux-3.11", "python-build-full-linux-3.11-02"])
+def test_latest_rejects_evidence_in_another_artifact(tmp_path, name):
+    """A record counts only in the artifact of its own tier, configuration and attempt."""
+    record = records("full")[0]
+    assert record["configuration"]["id"] == "linux-3.11" and record["identity"]["run_attempt"] == "2"
+    write(tmp_path / "python-build-full-linux-3.11-2/record.json", record)
+    assert len(contract.latest([tmp_path / "python-build-full-linux-3.11-2/record.json"], "build")) == 1
+    write(tmp_path / name / "record.json", record)
+    with pytest.raises(ValueError, match="artifact of its configuration and attempt"):
+        contract.latest([tmp_path / name / "record.json"], "build")
+    with pytest.raises(ValueError, match="Unknown CI evidence"):
+        contract.latest([], "upload")
 
 
 @pytest.mark.parametrize("kind", ["missing", "duplicate", "substitution"])

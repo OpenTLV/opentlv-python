@@ -281,9 +281,10 @@ an old success. The gate CLI accepts only an official clean hosted checkout.
 failed or cancelled jobs and their dependents run again, for example the macOS
 jobs that no hosted runner picked up. The gate therefore downloads the evidence
 of every attempt and counts each configuration with its newest record. That
-record must come from this run at this or an earlier attempt, with the same
-repository, commit, definitions and release policy; evidence of a later attempt
-or another run fails. Every job result must still be successful, so the newest
+record must lie in the artifact that names its tier, configuration and attempt,
+such as `python-build-full-macos-3.14-2`, and come from this run at this or an
+earlier attempt, with the same repository, commit, definitions and release
+policy; evidence of a later attempt, of another run or in another artifact fails. Every job result must still be successful, so the newest
 attempt of each job succeeded.
 
 After the first hosted PR run, configure branch protection/rulesets to require

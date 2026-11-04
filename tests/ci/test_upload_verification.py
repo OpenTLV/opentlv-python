@@ -112,7 +112,8 @@ def test_select_copies_the_tested_upload_set(tmp_path, evidence):
 
 @pytest.mark.parametrize("mutation,message", [
     ("wheel-bytes", "differ from validated build"), ("sdist-content", "differ between configurations"),
-    ("attempt", "this Full run"), ("release", "this Full run"), ("missing", "configuration evidence")])
+    ("attempt", "this Full run"), ("artifact", "artifact of its configuration and attempt"),
+    ("release", "this Full run"), ("missing", "configuration evidence")])
 def test_select_rejects_untested_or_inconsistent_builds(tmp_path, evidence, mutation, message):
     root, _ = evidence
     directory = root / "python-build-full-windows-3.14-2"
@@ -134,6 +135,10 @@ def test_select_rejects_untested_or_inconsistent_builds(tmp_path, evidence, muta
         if mutation == "attempt":
             # Newer than the selecting attempt.
             record["identity"]["run_attempt"] = "3"
+            directory = directory.rename(directory.with_name("python-build-full-windows-3.14-3"))
+        elif mutation == "artifact":
+            # An earlier attempt's record in the artifact of this attempt.
+            record["identity"]["run_attempt"] = "1"
         else:
             record["require_release"] = True
         write(directory / "record.json", record)
@@ -231,11 +236,16 @@ def test_upload_set_of_an_earlier_attempt_is_verified_and_the_newest_is_chosen(t
     selection["identity"]["run_attempt"] = "1"
     write(older / "selection.json", selection)
     assert ci.newest_upload(downloads) == downloads / "python-upload-full-2"
-    shutil.copytree(output, downloads / "duplicate")
+    shutil.copytree(output, downloads / "again/python-upload-full-2")
     with pytest.raises(ValueError, match="Duplicate upload sets"):
         ci.newest_upload(downloads)
     with pytest.raises(ValueError, match="Missing upload set"):
         ci.newest_upload(tmp_path / "empty")
+    # The selection of attempt 2 in the artifact of attempt 3, or outside an upload artifact.
+    for name in ("python-upload-full-3", "upload"):
+        shutil.copytree(output, tmp_path / name / name)
+        with pytest.raises(ValueError, match="artifact of its attempt"):
+            ci.newest_upload(tmp_path / name)
 
 
 def report(*items):
@@ -268,6 +278,9 @@ def test_verify_installs_the_selected_wheel_by_name(tmp_path, evidence, monkeypa
     wheel = packages.wheel_name(packages.policy(), system)
     output = select(evidence[0], tmp_path)
     sha = read(output / "selection.json")["distributions"][wheel]["sha256"]
+    # The job downloads every attempt's upload set into its own artifact directory.
+    downloads = tmp_path / "downloads"
+    shutil.copytree(output, downloads / "python-upload-full-2")
     # The committed lock names an attested Core release, as the fixture records do.
     monkeypatch.setattr(ci, "core_corpus", lambda work, core: tmp_path / "corpus")
     commands = []
@@ -289,7 +302,7 @@ def test_verify_installs_the_selected_wheel_by_name(tmp_path, evidence, monkeypa
                 "examples": policy["examples"],
                 "query": {"fixtures": policy["query_fixtures"], "checks": policy["query_checks"]}})
     monkeypatch.setattr(ci, "run", run)
-    args = argparse.Namespace(tier="full", configuration=name, upload=output, work=tmp_path / "verify",
+    args = argparse.Namespace(tier="full", configuration=name, upload=downloads, work=tmp_path / "verify",
                               output=tmp_path / "verified.json", require_release=False)
     if installed == "other":
         with pytest.raises(ValueError, match="selected wheel"):
@@ -299,7 +312,7 @@ def test_verify_installs_the_selected_wheel_by_name(tmp_path, evidence, monkeypa
     ci.verify(args)
     install = next(command for command in commands if "--report" in command)
     # By name from the upload set only, never an sdist build, and only with the selected wheel's hash.
-    assert install[install.index("--find-links") + 1] == str(output.resolve() / "dist")
+    assert install[install.index("--find-links") + 1] == str(downloads.resolve() / "python-upload-full-2/dist")
     assert {"--no-index", "--require-hashes"} <= set(install)
     assert install[install.index("--only-binary") + 1] == ":all:"
     assert (tmp_path / "verify/requirements.txt").read_text() == (

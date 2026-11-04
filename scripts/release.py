@@ -99,10 +99,10 @@ def assemble(evidence, verification, quality_path, output, tag):
     definitions = definition_hashes()
     require(not output.exists(), "Release output must be fresh")
     # Each configuration counts with the newest attempt of this run, as in the Full gate.
-    builds = latest(sorted(evidence.rglob("record.json")))
+    builds = latest(sorted(evidence.rglob("record.json")), "build")
     paths = [path for path, _ in builds]
     records = [record for _, record in builds]
-    verifications = [record for _, record in latest(sorted(verification.rglob("verified.json")))]
+    verifications = [record for _, record in latest(sorted(verification.rglob("verified.json")), "verify")]
     quality = read(quality_path)
     expected = validate_records(records, "full", current, definitions, quality["checks"], True, verifications)
     require(quality == expected, "Full quality report differs from this run's package records")

@@ -72,15 +72,32 @@ def same_run(evidence, current):
     return attempt(evidence) is not None and 0 < attempt(evidence) <= attempt(current)
 
 
-def latest(paths):
+def artifact(kind, *parts):
+    """The artifact name that a CI job uploads its evidence under, ending with its run attempt."""
+    return "-".join(("python", kind, *(str(part) for part in parts)))
+
+
+def recorded(record, key):
+    """Return a nested mapping of a downloaded record, or an empty one when the record has none."""
+    value = record.get(key)
+    return value if type(value) is dict else {}
+
+
+def latest(paths, kind):
     """Return each configuration's evidence of the newest attempt as (path, record) pairs.
 
     Downloads include every attempt of the run; a re-run job adds its newer evidence beside the old one.
+    Each record must lie in the artifact that its job uploaded, `python-<kind>-<tier>-<configuration>-<attempt>`,
+    so that no evidence counts for another configuration or attempt.
     """
+    require(kind in ("build", "verify"), "Unknown CI evidence")
     chosen = {}
     for path in paths:
         record = read(path)
-        name = record.get("configuration", {}).get("id")
+        name = recorded(record, "configuration").get("id")
+        require(path.parent.name == artifact(kind, record.get("tier"), name,
+                                             recorded(record, "identity").get("run_attempt")),
+                "Evidence is not in the artifact of its configuration and attempt")
         rank = attempt(record.get("identity")) or 0
         if name in chosen:
             require(chosen[name][0] != rank, "Duplicate evidence for one configuration and attempt")

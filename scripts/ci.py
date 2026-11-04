@@ -17,9 +17,9 @@ from urllib.parse import unquote, urlparse
 import venv
 
 from build_support import ROOT, digest, read, require, run, write
-from ci_contract import (TIERS, attempt as recorded_attempt, definition_hashes, identity, junit_counts, latest,
-                         matrix, same_run, select_distributions, validate_dependency, validate_records,
-                         validate_suite)
+from ci_contract import (TIERS, artifact, attempt as recorded_attempt, definition_hashes, identity, junit_counts,
+                         latest, matrix, recorded, same_run, select_distributions, validate_dependency,
+                         validate_records, validate_suite)
 from core_dependency import corpus as core_corpus
 from verified_core import lock
 from package_contract import (DISTRIBUTION, check_sdist, check_wheel, inspect_artifacts,
@@ -145,7 +145,7 @@ def select(args):
     output = args.output.resolve()
     require(not output.exists(), "Use a fresh --output directory")
     current, definitions, package = identity(), definition_hashes(), package_policy()
-    evidence = latest(sorted(args.evidence.rglob("record.json")))
+    evidence = latest(sorted(args.evidence.rglob("record.json")), "build")
     records = [record for _, record in evidence]
     directories = {record["configuration"]["id"]: path.parent / "ci" for path, record in evidence}
     require(set(directories) == {item["id"] for item in matrix("full")}, "Missing or duplicate configuration evidence")
@@ -211,7 +211,10 @@ def newest_upload(root):
     """
     selections = {}
     for path in sorted(root.rglob("selection.json")):
-        rank = recorded_attempt(read(path).get("identity")) or 0
+        selection = read(path)
+        require(path.parent.name == artifact("upload", "full", recorded(selection, "identity").get("run_attempt")),
+                "Upload set is not in the artifact of its attempt")
+        rank = recorded_attempt(selection.get("identity")) or 0
         require(rank not in selections, "Duplicate upload sets of one attempt")
         selections[rank] = path.parent
     require(selections, "Missing upload set")
@@ -382,12 +385,12 @@ def main():
         require(current["hosted"] and not current["dirty"] and current["repository"] == "OpenTLV/opentlv-python",
                 "Hosted quality evidence requires the official clean checkout")
         # The downloads hold every attempt of this run; each configuration counts with its newest one.
-        evidence = latest(sorted(args.evidence.rglob("record.json")))
+        evidence = latest(sorted(args.evidence.rglob("record.json")), "build")
         records = [record for _, record in evidence]
         for path, record in evidence:
             validate_bundle(path.parent / "ci", record, package_policy())
         # Only Full downloads verification evidence.
-        verifications = [record for _, record in latest(sorted(args.verification.rglob("verified.json")))]
+        verifications = [record for _, record in latest(sorted(args.verification.rglob("verified.json")), "verify")]
         report = validate_records(records, args.tier, current, definition_hashes(),
                                   json.loads(os.environ["CHECK_RESULTS"]), args.require_release, verifications)
         write(args.output, report)

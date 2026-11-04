@@ -1,9 +1,12 @@
-# OpenTLV Python v0.2.0
+# OpenTLV Python v0.2.2
 
 First release for PyPI: one distribution, `opentlv`, now carries both the native
 `_opentlv` extension and the public `opentlv` package, and has no dependencies.
 The separate `opentlv-core` distribution of v0.1.0 is discontinued and is not
 published. Imports, the public API and the Core lock are unchanged from v0.1.0.
+Versions 0.2.0 and 0.2.1 were not released: 0.2.0 was only staged on TestPyPI,
+and the staging of 0.2.1 stopped before its upload. v0.2.2 has the same
+package contents apart from the version and replaces both.
 
 ```sh
 python -m pip install opentlv
@@ -32,9 +35,9 @@ python -m pip install opentlv
   from there on every configuration. Only a successful staging run can be
   promoted: the promotion uploads the same files, without a rebuild, to PyPI
   through Trusted Publishing with PEP 740 provenance.
-- Distributes `opentlv-python-0.2.0.zip`, its `manifest.json` and `SHA256SUMS`
+- Distributes `opentlv-python-0.2.2.zip`, its `manifest.json` and `SHA256SUMS`
   with GitHub build-provenance attestations. See
-  [release preparation](https://github.com/OpenTLV/opentlv-python/blob/v0.2.0/docs/releases.md)
+  [release preparation](https://github.com/OpenTLV/opentlv-python/blob/v0.2.2/docs/releases.md)
   for verifying them.
 
 Generic Core symbol coverage is complete, but symbol references do not prove

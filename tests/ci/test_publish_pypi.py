@@ -163,13 +163,13 @@ def test_candidate_upload_set_is_rechecked_before_upload(candidate, mutation, me
         del manifest["distributions"][name]
         write(output / "manifest.json", manifest)
     elif mutation == "foreign-record":
-        record = read(output.parent.parent / "evidence/windows-3.11/record.json")
+        record = read(output.parent.parent / "evidence/python-build-full-windows-3.11-2/record.json")
         rewrite_candidate(output, lambda contents: contents.__setitem__(
             "linux-3.11/record.json", json.dumps(record).encode()))
     else:
         # A wheel whose bytes match the manifest but violate the contract still cannot be uploaded.
         work = output.parent.parent / "broken"
-        with zipfile.ZipFile(output.parent.parent / "evidence/linux-3.11/ci/wheels" / name) as archive:
+        with zipfile.ZipFile(output.parent.parent / "evidence/python-build-full-linux-3.11-2/ci/wheels" / name) as archive:
             contents = {entry: archive.read(entry) for entry in archive.namelist()}
         contents.pop("_opentlv.abi3.so")
         work.mkdir()

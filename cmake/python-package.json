@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "0.2.0",
+  "version": "0.2.2",
   "requires_python": ">=3.11",
   "compatible_core_versions": ["0.8.0"],
   "wheel_platforms": {

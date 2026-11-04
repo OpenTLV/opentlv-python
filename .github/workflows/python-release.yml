@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Unused Python tag matching the package version, CHANGELOG.md and docs/release-notes.md (v0.2.0)
+        description: Unused Python tag matching the package version, CHANGELOG.md and docs/release-notes.md (v0.2.2)
         required: true
         type: string
       publish_release:
