@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import ci_contract as contract
 import verified_core
-from build_support import ROOT, read
+from build_support import ROOT, read, write
 from package_contract import DISTRIBUTION, artifact_names, policy as package_policy, wheel_name
 
 # Fixtures of the committed package follow its policy, so a version bump needs no test change.
@@ -97,7 +97,9 @@ def test_complete_gate(tier):
 
 @pytest.mark.parametrize("path,value", [
     (("schema",), 2), (("tier",), "full"), (("status",), "failed"),
-    (("identity", "run_attempt"), "1"), (("identity", "run_id"), "99"),
+    # Evidence of a later attempt than the gate's, or no canonical attempt, is not this run's.
+    (("identity", "run_attempt"), "3"), (("identity", "run_attempt"), "02"), (("identity", "run_attempt"), "0"),
+    (("identity", "run_attempt"), 1), (("identity",), "2"), (("identity", "run_id"), "99"),
     (("identity", "commit"), "e" * 40), (("identity", "repository"), "other/repository"),
     (("identity", "hosted"), False), (("identity", "dirty"), True),
     (("definitions", "scripts/ci.py"), "e" * 64),
@@ -124,6 +126,37 @@ def test_rejects_incomplete_or_foreign_record(path, value):
     target[path[-1]] = value
     with pytest.raises(ValueError):
         contract.validate_records(data, "pr", IDENTITY, DEFINITIONS, CHECKS)
+
+
+def test_accepts_evidence_of_an_earlier_attempt_of_this_run():
+    """Re-running failed jobs keeps the other jobs' evidence of an earlier attempt."""
+    data = records("full")
+    verified = verifications(data)
+    for record in (data[0], data[-1], verified[3]):
+        record["identity"]["run_attempt"] = "1"
+    report = contract.validate_records(data, "full", IDENTITY, DEFINITIONS, checks("full"), False, verified)
+    assert report["status"] == "success" and report["identity"] == IDENTITY
+
+
+def test_latest_takes_each_configuration_from_its_newest_attempt(tmp_path):
+    data = records("full")
+    paths = []
+    for record in data:
+        for run_attempt in ("1", "2"):
+            if run_attempt == "1" or record is not data[0]:
+                path = tmp_path / (record["configuration"]["id"] + "-" + run_attempt) / "record.json"
+                write(path, {**record, "identity": {**IDENTITY, "run_attempt": run_attempt}})
+                paths.append(path)
+    chosen = contract.latest(sorted(paths))
+    names = sorted(item["configuration"]["id"] for item in data)
+    assert [record["configuration"]["id"] for _, record in chosen] == names
+    attempts = {record["configuration"]["id"]: record["identity"]["run_attempt"] for _, record in chosen}
+    assert attempts.pop(data[0]["configuration"]["id"]) == "1" and set(attempts.values()) == {"2"}
+    assert all(path.parent.name.endswith("-" + record["identity"]["run_attempt"]) for path, record in chosen)
+    duplicate = tmp_path / "duplicate/record.json"
+    write(duplicate, {**data[1], "identity": dict(IDENTITY)})
+    with pytest.raises(ValueError, match="Duplicate evidence"):
+        contract.latest(sorted(paths) + [duplicate])
 
 
 @pytest.mark.parametrize("kind", ["missing", "duplicate", "substitution"])

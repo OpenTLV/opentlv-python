@@ -277,6 +277,15 @@ foreign, cancelled, unexpectedly skipped or unsuccessful evidence fails.
 Success evidence is removed before each attempt, so a failed rerun cannot reuse
 an old success. The gate CLI accepts only an official clean hosted checkout.
 
+**Re-run failed jobs** starts another attempt of the same run in which only the
+failed or cancelled jobs and their dependents run again, for example the macOS
+jobs that no hosted runner picked up. The gate therefore downloads the evidence
+of every attempt and counts each configuration with its newest record. That
+record must come from this run at this or an earlier attempt, with the same
+repository, commit, definitions and release policy; evidence of a later attempt
+or another run fails. Every job result must still be successful, so the newest
+attempt of each job succeeded.
+
 After the first hosted PR run, configure branch protection/rulesets to require
 the check ending in `Python quality gate` from GitHub Actions; use the exact
 displayed reusable-workflow context (normally `checks / Python quality gate`).
@@ -299,8 +308,9 @@ first standalone CI baseline; no hosted speedup or measured latency is claimed.
 
 Each Full configuration builds and tests its own bytes, but only one wheel per
 platform and one sdist are published. After all builds succeed, `Python upload
-set` (`scripts/ci.py select`) checks that every build record is from this run
-attempt and that its uploaded packages still have the recorded SHA-256. It then
+set` (`scripts/ci.py select`) takes each configuration's newest build record,
+checks that it is from this run at this or an earlier attempt and that its
+uploaded packages still have the recorded SHA-256. It then
 selects each platform's CPython 3.11 wheel and the `linux-3.11` sdist, the same
 choice that release assembly uses. Every configuration rebuilt its wheel from
 its own sdist; the files inside each of those sdists must be byte-identical to
@@ -310,8 +320,9 @@ the selected one, so only the archive metadata differs. The
 
 `Python upload set / <configuration>` (`scripts/ci.py verify`) then runs on all
 15 configurations, on their own runners and interpreters, without building
-anything. It rechecks the downloaded files against the selection, the attempt
-and the package contract (tags, payload, native module, metadata without
+anything. It takes the newest attempt's upload set, which is an earlier one when
+only failed verifications ran again, and rechecks the downloaded files against
+the selection, this run and the package contract (tags, payload, native module, metadata without
 dependencies and license texts). It installs into a fresh virtualenv by name
 from the upload set alone:
 
@@ -331,7 +342,7 @@ was built with.
 
 The gate downloads the `python-verify-full-<configuration>-<attempt>` records
 and derives the upload set from the build records again. It requires one
-successful verification per Full configuration of this attempt that tested
+successful verification per Full configuration, its newest of this run, that tested
 exactly those digests, installed its own platform's wheel, recorded the build's
 Core identity and ran the complete suite. `quality.json` records the upload set
 and the verification digests. A missing native module, a dependency on
@@ -341,7 +352,8 @@ ones therefore fail Full and leave no release candidate.
 ## Release preparation
 
 The manual [release preparation](releases.md) calls Full with verified Core
-required and assembles only the current run attempt's validated packages.
+required and assembles only this run's validated packages, each configuration's
+from its newest attempt as the gate accepted them, with this attempt's quality report.
 Its optional `publish_release` input creates a GitHub release/tag and notifies
 Docs; its `pypi` input stages the verified upload set on TestPyPI or promotes a staged one to PyPI from a protected
 environment. See [versioning](versioning.md) for the binding version

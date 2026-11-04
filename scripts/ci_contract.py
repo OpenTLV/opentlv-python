@@ -51,6 +51,45 @@ def identity():
             "hosted": hosted, "dirty": dirty}
 
 
+def attempt(evidence):
+    """The run attempt that recorded `evidence`, or None when it names no canonical hosted attempt."""
+    value = evidence.get("run_attempt") if type(evidence) is dict else None
+    return int(value) if type(value) is str and value.isdigit() and value == str(int(value)) else None
+
+
+def same_run(evidence, current):
+    """Whether `evidence` identifies this run at this or an earlier attempt.
+
+    Re-running failed jobs starts another attempt of the same run in which only those jobs and their
+    dependents run again, so the other jobs' evidence stays that of an earlier attempt.
+    """
+    if type(evidence) is not dict or set(evidence) != set(current):
+        return False
+    if any(evidence[key] != value for key, value in current.items() if key != "run_attempt"):
+        return False
+    if attempt(current) is None:
+        return evidence["run_attempt"] == current["run_attempt"]
+    return attempt(evidence) is not None and 0 < attempt(evidence) <= attempt(current)
+
+
+def latest(paths):
+    """Return each configuration's evidence of the newest attempt as (path, record) pairs.
+
+    Downloads include every attempt of the run; a re-run job adds its newer evidence beside the old one.
+    """
+    chosen = {}
+    for path in paths:
+        record = read(path)
+        name = record.get("configuration", {}).get("id")
+        rank = attempt(record.get("identity")) or 0
+        if name in chosen:
+            require(chosen[name][0] != rank, "Duplicate evidence for one configuration and attempt")
+            if chosen[name][0] > rank:
+                continue
+        chosen[name] = (rank, path, record)
+    return [chosen[name][1:] for name in sorted(chosen, key=str)]
+
+
 def validate_dependency(selected, require_release=False):
     pinned = lock(require_release)
     require(all(selected.get(key) == pinned[key] for key in ("repository", "commit", "version")),
@@ -141,7 +180,7 @@ def validate_verifications(verifications, records, upload, expected_identity, de
         require(record.get("schema") == 1 and record.get("kind") == "upload-verification"
                 and record.get("tier") == "full" and record.get("status") == "success",
                 "Unsuccessful upload set verification")
-        require(record.get("identity") == expected_identity, "Wrong repository/commit/run/attempt")
+        require(same_run(record.get("identity"), expected_identity), "Wrong repository/commit/run/attempt")
         require(record.get("definitions") == definitions, "CI definitions differ")
         require(record.get("configuration") == expected[name], "Configuration differs")
         require(record.get("require_release") is require_release, "Release policy differs")
@@ -168,7 +207,7 @@ def validate_index_installs(records, index, files, expected_identity, definition
     expected = {item["id"]: item for item in matrix("full")}
     package = package_policy()
     policy = read(ROOT / "cmake/ci-matrix.json")
-    same_run = {key: value for key, value in expected_identity.items() if key != "run_attempt"}
+    this_run = {key: value for key, value in expected_identity.items() if key != "run_attempt"}
     seen = set()
     for record in records:
         name = record.get("configuration", {}).get("id")
@@ -179,7 +218,7 @@ def validate_index_installs(records, index, files, expected_identity, definition
                 and record.get("status") == "success", "Unsuccessful package index installation")
         identity_fields = dict(record.get("identity", {}))
         identity_fields.pop("run_attempt", None)
-        require(identity_fields == same_run, "Wrong repository/commit/run")
+        require(identity_fields == this_run, "Wrong repository/commit/run")
         require(record.get("definitions") == definitions, "CI definitions differ")
         require(record.get("configuration") == expected[name], "Configuration differs")
         require(record.get("require_release") is True, "Release policy differs")
@@ -218,7 +257,7 @@ def validate_records(records, tier, expected_identity, definitions, checks, requ
         seen.add(name)
         require(record.get("schema") == 1 and record.get("tier") == tier
                 and record.get("status") == "success", "Unsuccessful build evidence")
-        require(record.get("identity") == expected_identity, "Wrong repository/commit/run/attempt")
+        require(same_run(record.get("identity"), expected_identity), "Wrong repository/commit/run/attempt")
         require(record.get("definitions") == definitions, "CI definitions differ")
         require(record.get("configuration") == expected[name], "Configuration differs")
         require(record.get("require_release") is require_release, "Release policy differs")

@@ -5,16 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - 2026-11-03
-
-### Changed
-
-- Prepare `0.2.1` for a new TestPyPI staging run. The 0.2.0 files on TestPyPI are immutable, and since the index installation fix moved `main` past their staging commit, that run can no longer be promoted; a new staging run builds new bytes, which TestPyPI rejects for 0.2.0. The package policy and `pyproject.toml` move to `0.2.1` with the same Core `v0.8.0` lock and public API. `docs/release-notes.md` describes v0.2.1 as the first PyPI release and 0.2.0 as staged on TestPyPI only and not released, the README, release guide, development guide, versioning page and the `tag` input description name the new version, and this changelog section is closed for the version. (#51)
-
-### Fixed
-
-- Run `Python index installation / <configuration>` after every package index upload. The job had no condition, so the implicit `success()` also required its indirect dependencies, but staging always skips `publish` and a promotion skips `full` and `assemble`; in staging run 41652582386 the upload to TestPyPI succeeded but none of the 15 installations ran, and the run was still green. The job now runs when the matrix plan and the upload job succeeded, and the workflow test requires that condition instead of forbidding one. (#51)
-
 ## [0.2.0] - 2026-11-03
 
 ### Added
@@ -31,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recover a Full run with **Re-run failed jobs**. Full and assembly downloaded only the artifacts of their own attempt, so after a re-run of failed jobs the upload set, gate and assembly found only the re-run jobs' evidence and failed, and only **Re-run all jobs** could succeed; in release preparation run 41664081931 each of four attempts lost one to five macOS arm64 jobs that no hosted runner acquired within 15 minutes. `Python upload set`, the gate and assembly now download the build and verification evidence of every attempt and count each configuration with its newest record, which must come from this run at this or an earlier attempt with the same repository, commit, definitions and release policy, and `Python upload set / <configuration>` installs the newest attempt's upload set. Evidence of a later attempt, of another run or twice for one attempt still fails, every job result must still be successful, and the quality report stays bound to the attempt that assembles it. The quality and release guides document the recovery. (#51)
+- Run `Python index installation / <configuration>` after every package index upload. The job had no condition, so the implicit `success()` also required its indirect dependencies, but staging always skips `publish` and a promotion skips `full` and `assemble`; in staging run 41652582386 the upload to TestPyPI succeeded but none of the 15 installations ran, and the run was still green. The job now runs when the matrix plan and the upload job succeeded, and the workflow test requires that condition instead of forbidding one. (#51)
 - Rename the release dispatch check to `checked_dispatch()`. CodeQL's sensitive-data heuristic treats names containing `trusted` as secrets, so writing the package policy and candidate manifest it returns was reported as clear-text storage of sensitive information. (#49)
 - Name the native module `_opentlv.abi3.so` on Linux and macOS for every build interpreter. CPython 3.15 reports the platform-qualified stable-ABI suffix `.abi3-x86_64-linux-gnu.so`, which CMake used, so a `cp311-abi3` wheel built with 3.15 could not be imported by CPython 3.11-3.14; the package checks rejected it, and Full CI failed on `linux-3.15` and `macos-3.15`. (#48)
 

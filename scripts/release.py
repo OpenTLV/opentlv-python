@@ -11,7 +11,7 @@ import tempfile
 import zipfile
 
 from build_support import ROOT, api, digest, read, require, write
-from ci_contract import REPOSITORY, definition_hashes, identity, validate_records
+from ci_contract import REPOSITORY, definition_hashes, identity, latest, validate_records
 from package_contract import policy, validate_bundle
 from verified_core import lock
 
@@ -98,9 +98,11 @@ def assemble(evidence, verification, quality_path, output, tag):
     current, package, pinned = preflight(tag)
     definitions = definition_hashes()
     require(not output.exists(), "Release output must be fresh")
-    paths = sorted(evidence.rglob("record.json"))
-    records = [read(path) for path in paths]
-    verifications = [read(path) for path in sorted(verification.rglob("verified.json"))]
+    # Each configuration counts with the newest attempt of this run, as in the Full gate.
+    builds = latest(sorted(evidence.rglob("record.json")))
+    paths = [path for path, _ in builds]
+    records = [record for _, record in builds]
+    verifications = [record for _, record in latest(sorted(verification.rglob("verified.json")))]
     quality = read(quality_path)
     expected = validate_records(records, "full", current, definitions, quality["checks"], True, verifications)
     require(quality == expected, "Full quality report differs from this run's package records")

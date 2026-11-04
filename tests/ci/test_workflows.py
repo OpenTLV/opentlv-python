@@ -62,18 +62,37 @@ def test_full_verifies_the_selected_upload_set_on_every_configuration():
     assert verify["runs-on"] == jobs["build"]["runs-on"]
     uploads = [step["with"]["name"] for step in select["steps"]
                if step.get("uses", "").startswith("actions/upload-artifact@")]
-    downloads = [step["with"]["name"] for step in verify["steps"]
+    downloads = [step["with"]["pattern"] for step in verify["steps"]
                  if step.get("uses", "").startswith("actions/download-artifact@")]
-    assert uploads == downloads == ["python-upload-${{ inputs.tier }}-${{ github.run_attempt }}"]
+    assert uploads == ["python-upload-${{ inputs.tier }}-${{ github.run_attempt }}"]
+    # A re-run of failed verifications installs the upload set that an earlier attempt selected.
+    assert downloads == ["python-upload-${{ inputs.tier }}-*"]
     # Verification uses no source build: no development requirements, compilers or package repair.
     assert not any("requirements-dev.txt" in step.get("run", "") for step in verify["steps"])
     gate = [step["with"] for step in jobs["gate"]["steps"] if step.get("uses", "").startswith("actions/download-artifact@")]
-    assert {"pattern": "python-verify-${{ inputs.tier }}-*-${{ github.run_attempt }}",
-            "path": "build/verification"} in gate
+    assert {"pattern": "python-verify-${{ inputs.tier }}-*", "path": "build/verification"} in gate
     assemble = workflow("python-release.yml")["jobs"]["assemble"]
-    assert any(step.get("with", {}).get("pattern") == "python-verify-full-*-${{ github.run_attempt }}"
-               for step in assemble["steps"])
+    assert any(step.get("with", {}).get("pattern") == "python-verify-full-*" for step in assemble["steps"])
     assert any("--verification build/verification" in step.get("run", "") for step in assemble["steps"])
+
+
+def test_full_evidence_survives_a_re_run_of_failed_jobs():
+    """Jobs that did not run again keep their evidence of an earlier attempt, so every evidence download
+    takes all attempts, and the scripts count each configuration with its newest one."""
+    jobs = workflow("python-checks.yml")["jobs"]
+    release = workflow("python-release.yml")["jobs"]
+    patterns = {(name, step["with"]["pattern"]) for source in (jobs, release) for name, job in source.items()
+                for step in job.get("steps", []) if step.get("uses", "").startswith("actions/download-artifact@")
+                and "pattern" in step.get("with", {})}
+    assert {("select", "python-build-${{ inputs.tier }}-*"), ("gate", "python-build-${{ inputs.tier }}-*"),
+            ("gate", "python-verify-${{ inputs.tier }}-*"), ("verify", "python-upload-${{ inputs.tier }}-*"),
+            ("assemble", "python-build-full-*"), ("assemble", "python-verify-full-*")} <= patterns
+    assert not any("run_attempt" in pattern for name, pattern in patterns if name in (
+        "select", "verify", "gate", "assemble"))
+    # The gate and assembly run again with any re-run build or verification, so the report stays this attempt's.
+    quality = [step["with"] for step in release["assemble"]["steps"]
+               if step.get("uses", "").startswith("actions/download-artifact@") and "name" in step.get("with", {})]
+    assert quality == [{"name": "python-quality-full-${{ github.run_attempt }}", "path": "build/quality"}]
 
 
 def test_core_native_tests_stay_disabled():

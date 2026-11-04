@@ -364,6 +364,21 @@ def test_upload_set_requires_every_platform_and_the_sdist(missing):
         ci_contract.select_distributions([record for record in data if record["configuration"]["id"] != missing])
 
 
+def test_assemble_takes_each_configuration_from_its_newest_attempt(tmp_path, monkeypatch):
+    """After a re-run of failed jobs, the downloads hold an earlier attempt's evidence beside the newest."""
+    evidence, verification, quality, output = release_fixture(tmp_path, monkeypatch)
+    for root, name in ((evidence, "record.json"), (verification, "verified.json")):
+        path = sorted(root.rglob(name))[0]
+        stale = path.parent.with_name(path.parent.name + "-1")
+        shutil.copytree(path.parent, stale)
+        record = read(stale / name)
+        record["identity"]["run_attempt"] = "1"
+        record["status"] = "failed"
+        write(stale / name, record)
+    release.assemble(evidence, verification, quality, output, TAG)
+    assert read(output / "manifest.json")["configurations"] == read(quality)["configurations"]
+
+
 @pytest.mark.parametrize("mutation", ["attempt", "missing", "digest", "quality", "unverified",
                                       "verification-missing", "verification-bytes"])
 def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation):
@@ -390,7 +405,8 @@ def test_release_rejects_stale_or_partial_inputs(tmp_path, monkeypatch, mutation
         wheel.write_bytes(wheel.read_bytes() + b"changed")
     else:
         if mutation == "attempt":
-            record["identity"]["run_attempt"] = "1"
+            # Newer than the assembling attempt.
+            record["identity"]["run_attempt"] = "3"
         else:
             record["core"]["verified"] = False
         write(path, record)

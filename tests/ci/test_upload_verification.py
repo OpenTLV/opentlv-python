@@ -6,6 +6,7 @@ import argparse
 import copy
 from pathlib import Path
 import platform
+import shutil
 import sys
 
 import pytest
@@ -30,7 +31,7 @@ def gate(data, verified):
 
 @pytest.mark.parametrize("path,value", [
     (("kind",), "build"), (("tier",), "pr"), (("status",), "failed"), (("schema",), 2),
-    (("identity", "run_attempt"), "1"), (("definitions", "scripts/ci.py"), "e" * 64),
+    (("identity", "run_attempt"), "3"), (("definitions", "scripts/ci.py"), "e" * 64),
     (("configuration", "python"), "3.12"), (("require_release",), True), (("runtime", "python"), "3.12.1"),
     (("runtime", "system"), "Windows"), (("upload", WHEEL), "0" * 64), (("upload", SDIST), "0" * 64),
     (("upload", f"opentlv-{VERSION}-cp311-abi3-linux_x86_64.whl"), "c" * 64),
@@ -111,7 +112,7 @@ def test_select_copies_the_tested_upload_set(tmp_path, evidence):
 
 @pytest.mark.parametrize("mutation,message", [
     ("wheel-bytes", "differ from validated build"), ("sdist-content", "differ between configurations"),
-    ("attempt", "this Full attempt"), ("release", "this Full attempt"), ("missing", "configuration evidence")])
+    ("attempt", "this Full run"), ("release", "this Full run"), ("missing", "configuration evidence")])
 def test_select_rejects_untested_or_inconsistent_builds(tmp_path, evidence, mutation, message):
     root, _ = evidence
     directory = root / "python-build-full-windows-3.14-2"
@@ -131,13 +132,37 @@ def test_select_rejects_untested_or_inconsistent_builds(tmp_path, evidence, muta
         (directory / "record.json").unlink()
     else:
         if mutation == "attempt":
-            record["identity"]["run_attempt"] = "1"
+            # Newer than the selecting attempt.
+            record["identity"]["run_attempt"] = "3"
         else:
             record["require_release"] = True
         write(directory / "record.json", record)
     with pytest.raises(ValueError, match=message):
         select(root, tmp_path)
     assert not (tmp_path / "upload").exists()
+
+
+def test_select_takes_each_configuration_from_its_newest_attempt(tmp_path, evidence):
+    """After a re-run of failed jobs, a build that did not run again counts with its earlier attempt."""
+    root, data = evidence
+    kept = root / "python-build-full-linux-3.11-2"
+    record = read(kept / "record.json")
+    record["identity"]["run_attempt"] = "1"
+    write(kept / "record.json", record)
+    kept.rename(root / "python-build-full-linux-3.11-1")
+    # The earlier, failed attempt of a re-run build left other bytes that must not be selected.
+    stale = root / "python-build-full-windows-3.11-1"
+    shutil.copytree(root / "python-build-full-windows-3.11-2", stale)
+    record = read(stale / "record.json")
+    record["identity"]["run_attempt"] = "1"
+    wheel = next((stale / "ci/wheels").iterdir())
+    wheel.write_bytes(wheel.read_bytes() + b"stale")
+    record["artifacts"]["wheels/" + wheel.name] = record["wheels"][DISTRIBUTION] = digest(wheel)
+    write(stale / "record.json", record)
+    output = select(root, tmp_path)
+    selection = read(output / "selection.json")
+    assert selection["distributions"] == contract.select_distributions(data)
+    assert selection["identity"] == IDENTITY
 
 
 def rewrite(output, name, change):
@@ -153,8 +178,8 @@ def rewrite(output, name, change):
 
 @pytest.mark.parametrize("mutation,message", [
     ("bytes", "differs from its selection"), ("extra", "differs from its selection"),
-    ("missing", "differs from its selection"), ("platform", "package policy"), ("attempt", "this attempt"),
-    ("definitions", "this attempt"), ("release", "this attempt"), ("native", "native _opentlv"),
+    ("missing", "differs from its selection"), ("platform", "package policy"), ("attempt", "this run"),
+    ("definitions", "this run"), ("release", "this run"), ("native", "native _opentlv"),
     ("dependency", "must not depend"), ("tag", "tag differs")])
 def test_verification_rejects_a_substituted_or_invalid_upload_set(tmp_path, evidence, mutation, message):
     output = select(evidence[0], tmp_path)
@@ -173,7 +198,8 @@ def test_verification_rejects_a_substituted_or_invalid_upload_set(tmp_path, evid
         write(output / "selection.json", selection)
         (output / "dist" / WHEEL).unlink()
     elif mutation == "attempt":
-        record["identity"]["run_attempt"] = "3"
+        # A verification cannot install an upload set that a later attempt selected.
+        record["identity"]["run_attempt"] = "1"
     elif mutation == "definitions":
         record["definitions"] = {}
     elif mutation == "release":
@@ -188,6 +214,28 @@ def test_verification_rejects_a_substituted_or_invalid_upload_set(tmp_path, evid
             info + "WHEEL", contents[info + "WHEEL"].replace(b"manylinux_2_28_x86_64", b"linux_x86_64")))
     with pytest.raises(ValueError, match=message):
         ci.upload_set(output, record, packages.policy())
+
+
+def test_upload_set_of_an_earlier_attempt_is_verified_and_the_newest_is_chosen(tmp_path, evidence):
+    """A re-run of failed verifications installs the upload set that an earlier attempt selected."""
+    output = select(evidence[0], tmp_path)
+    downloads = tmp_path / "downloads"
+    shutil.copytree(output, downloads / "python-upload-full-2")
+    record = {"identity": {**IDENTITY, "run_attempt": "3"}, "definitions": dict(DEFINITIONS),
+              "require_release": False}
+    assert ci.newest_upload(downloads) == downloads / "python-upload-full-2"
+    assert ci.upload_set(ci.newest_upload(downloads), record, packages.policy())["identity"] == IDENTITY
+    older = downloads / "python-upload-full-1"
+    shutil.copytree(output, older)
+    selection = read(older / "selection.json")
+    selection["identity"]["run_attempt"] = "1"
+    write(older / "selection.json", selection)
+    assert ci.newest_upload(downloads) == downloads / "python-upload-full-2"
+    shutil.copytree(output, downloads / "duplicate")
+    with pytest.raises(ValueError, match="Duplicate upload sets"):
+        ci.newest_upload(downloads)
+    with pytest.raises(ValueError, match="Missing upload set"):
+        ci.newest_upload(tmp_path / "empty")
 
 
 def report(*items):
